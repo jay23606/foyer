@@ -197,10 +197,10 @@ What has actually run, and where:
 | | proven by |
 |---|---|
 | rooms, lobby, chat, moderation, identity | netquake, in production |
-| voice mesh | netquake, in production |
+| voice mesh | netquake, in production; a real call between two devices |
 | `PeerNet` (data channels, mesh) | p2p-chat, two browsers on separate origins |
 | queue (random pairing) | the claim function in SQL, plus two browsers |
-| video | two browsers exchanging canvas-generated streams |
+| video | a real call between a laptop and a phone |
 | topology rules, room codes | unit tests |
 
 netquake keeps its own signalling broker rather than using `PeerNet`, because
@@ -217,9 +217,12 @@ is also the server, wrong for a conversation. `hostMigration` promotes the
 longest-present player instead. Every client works out the same successor, so it
 does not matter who notices first.
 
-One gap worth knowing: video has been verified with synthetic streams rather
-than a real camera, so the capture path itself is untested. The star topology
-also has no consumer -- p2p-chat uses a mesh and netquake keeps its own broker.
+Two gaps worth knowing. Reconnection has never been watched actually
+reconnecting: it needs a network that fails on cue, and the tests pin the rule
+it rests on -- that exactly one side retries -- rather than the behaviour. And
+the star topology has no consumer, since p2p-chat uses a mesh and netquake keeps
+its own broker, so the branch meant for authoritative-host apps has only ever
+run in a unit test.
 
 The topology rules and room-code generation are covered by tests (`npm test`),
 including the two properties a bug would break: that both peers agree a pair

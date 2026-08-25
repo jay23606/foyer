@@ -21,6 +21,7 @@ export declare class MediaMesh {
     private audioOnly;
     private videoSenders;
     private videoSending;
+    private attempts;
     constructor(ctx: FoyerContext, roomId: string);
     get muted(): boolean;
     get currentStatus(): MediaStatus;
@@ -85,6 +86,14 @@ export declare class MediaMesh {
     private send;
     private isOfferer;
     private newConnection;
+    /**
+     * Rebuilds a failed connection, or gives up on the peer.
+     *
+     * A call that drops because a network changed hands should come back
+     * without anyone reloading. Only the side that offered retries, or the two
+     * ends collide exactly as two simultaneous offers do.
+     */
+    private retry;
     private offerTo;
     private onSignal;
     private attachAudio;

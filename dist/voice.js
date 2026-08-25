@@ -43,6 +43,8 @@ export class MediaMesh {
     // it is what stops video without a fresh offer and answer.
     videoSenders = new Map();
     videoSending = true;
+    // Attempts so far, per peer; cleared the moment a connection succeeds.
+    attempts = new Map();
     constructor(ctx, roomId) {
         this.ctx = ctx;
         this.roomId = roomId;
@@ -320,14 +322,47 @@ export class MediaMesh {
             this.streamListeners.forEach(l => l(peerId, remote));
         });
         pc.addEventListener('connectionstatechange', () => {
-            if (pc.connectionState === 'failed' || pc.connectionState === 'closed')
+            // 'closed' is us; 'failed' is ICE giving up, which it does for
+            // reasons that often do not last.
+            if (pc.connectionState === 'closed')
                 this.drop(peerId);
+            if (pc.connectionState === 'failed')
+                void this.retry(peerId);
             // Parameters only stick once the sender is negotiated, so the
             // quality is set here rather than the moment the track is added.
-            if (pc.connectionState === 'connected')
+            if (pc.connectionState === 'connected') {
+                this.attempts.delete(peerId);
                 void this.applyVideoQuality();
+            }
         });
         return pc;
+    };
+    /**
+     * Rebuilds a failed connection, or gives up on the peer.
+     *
+     * A call that drops because a network changed hands should come back
+     * without anyone reloading. Only the side that offered retries, or the two
+     * ends collide exactly as two simultaneous offers do.
+     */
+    retry = async (peerId) => {
+        const tried = this.attempts.get(peerId) ?? 0;
+        const present = Object.keys(this.channel?.presenceState() ?? {});
+        if (tried >= this.ctx.reconnectAttempts ||
+            !present.includes(peerId) ||
+            !this.isOfferer(peerId)) {
+            this.drop(peerId);
+            return;
+        }
+        this.attempts.set(peerId, tried + 1);
+        // Discard the dead connection without telling the app the peer left.
+        this.connections.get(peerId)?.close();
+        this.connections.delete(peerId);
+        this.videoSenders.delete(peerId);
+        this.pendingIce.delete(peerId);
+        await new Promise(resolve => setTimeout(resolve, 500 * 2 ** tried));
+        if (!this.channel || !this.stream)
+            return;
+        await this.offerTo(peerId);
     };
     offerTo = async (peerId) => {
         if (this.connections.has(peerId) || !this.stream)
@@ -365,6 +400,15 @@ export class MediaMesh {
             return;
         }
         const description = JSON.parse(signal.data ?? '{}');
+        // A retry arrives as a new offer while the failed connection is still
+        // held; applying an offer to a corpse gets nowhere.
+        const existing = this.connections.get(signal.from);
+        if (existing && description.type === 'offer' && existing.connectionState === 'failed') {
+            existing.close();
+            this.connections.delete(signal.from);
+            this.videoSenders.delete(signal.from);
+            this.pendingIce.delete(signal.from);
+        }
         const pc = this.connections.get(signal.from) ?? this.newConnection(signal.from);
         await pc.setRemoteDescription(description);
         const queued = this.pendingIce.get(signal.from);
@@ -414,6 +458,7 @@ export class MediaMesh {
         pc?.close();
         this.pendingIce.delete(peerId);
         this.videoSenders.delete(peerId);
+        this.attempts.delete(peerId);
         this.dropAudio(peerId);
         if (had) {
             this.leaveListeners.forEach(l => l(peerId));

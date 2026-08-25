@@ -1,14 +1,8 @@
 import { RoomHandle } from './room.js';
+import { makeCode } from './codes.js';
+import { pair } from './queue.js';
 const DEFAULT_PREFIX = 'foyer_';
 const DEFAULT_ICE = [{ urls: 'stun:stun.l.google.com:19302' }];
-// No O/0 or I/1: a room code gets read aloud, and those are the pairs people
-// get wrong.
-const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-const makeCode = (length = 5) => {
-    const bytes = new Uint8Array(length);
-    crypto.getRandomValues(bytes);
-    return Array.from(bytes, b => CODE_ALPHABET[b % CODE_ALPHABET.length]).join('');
-};
 export class Foyer {
     supabase;
     prefix;
@@ -141,6 +135,16 @@ export class Foyer {
         await handle.join();
         return handle;
     };
+    // ----------------------------------------------------------------- queue
+    /**
+     * Pairs with whoever is waiting, or waits to be paired with.
+     *
+     * The other way to meet someone: `join` needs a room you already know
+     * about, this needs nothing. Anonymous on purpose -- it never touches
+     * profiles or auth, because the apps that want random pairing hold no
+     * accounts and want none.
+     */
+    queue = (options = {}) => pair(this.supabase, { prefix: this.prefix, iceServers: this.ice, ...options });
     toRoom = (row) => ({
         id: row.id,
         code: row.code,

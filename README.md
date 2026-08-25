@@ -47,6 +47,30 @@ anything. Committing to one backend buys:
 - **A live lobby**, not just a room whose name you already knew.
 - **Memory.** Rooms, results and state are rows. Peers alone forget everything.
 
+## Two ways to meet someone
+
+`join` needs a room you already know about. `queue` needs nothing -- you ask
+for whoever is waiting, and if nobody is, you become the one waiting.
+
+```js
+// a room you were told about
+const room = await foyer.join('NVVPT')
+
+// or whoever is out there
+const peer = await foyer.queue({ tag: 'chat', media: cam })
+peer.on('stream', s => video.srcObject = s)
+peer.send('hi')
+```
+
+The queue is deliberately anonymous: it never touches profiles or auth,
+because apps that pair strangers hold no accounts and want none. It stores an
+ephemeral random id and a tag, and nothing else.
+
+Claiming is one database function rather than a read then a write. Two people
+asking at the same moment must not both be handed the same partner, and
+`for update skip locked` is what makes that impossible rather than merely
+unlikely.
+
 ## Topology is a decision, so foyer makes you state it
 
 ```ts
@@ -96,7 +120,9 @@ engine owns peer connections through its own interface and wants only the
 offers and candidates. So that code is written and typed but unproven, and
 should be treated accordingly.
 
-There are no tests.
+The topology rules and room-code generation are covered by tests (`npm test`),
+including the two properties a bug would break: that both peers agree a pair
+should be wired, and that exactly one of them offers.
 
 No TURN server, so peers behind symmetric NAT will not connect. Pass your own
 `iceServers` if that matters to you.

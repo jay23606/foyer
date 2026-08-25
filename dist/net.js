@@ -1,3 +1,4 @@
+import { isOfferer, shouldConnect } from './topology.js';
 // Peer connections for a room.
 //
 // Signalling rides a Realtime channel of its own: a few dozen small messages
@@ -38,28 +39,10 @@ export class PeerNet {
     emit = (event, payload) => {
         this.listeners.get(event)?.forEach(l => l(payload));
     };
-    /**
-     * Should these two be connected at all?
-     *
-     * In a star only host-to-client pairs are wired, which is correct when the
-     * host is authoritative and wrong for anything peers must exchange
-     * directly. In a mesh everyone is wired to everyone.
-     */
-    shouldConnect = (peerId) => this.opts.topology === 'mesh'
-        ? true
-        : this.selfId === this.hostId || peerId === this.hostId;
-    /**
-     * Exactly one side of a pair must offer, or both offer at once and the
-     * negotiation collides.
-     *
-     * In a star the client offers and the host answers, so the host never has
-     * to know who is arriving before they arrive. In a mesh there is no host to
-     * lean on, so the lower id offers -- both peers compute the same answer
-     * from data they already have.
-     */
-    isOfferer = (peerId) => this.opts.topology === 'star'
-        ? this.selfId !== this.hostId
-        : this.selfId < peerId;
+    // Both decisions live in topology.ts, where they can be tested without a
+    // browser, a database and two live sessions.
+    shouldConnect = (peerId) => shouldConnect(this.opts.topology, this.selfId, this.hostId, peerId);
+    isOfferer = (peerId) => isOfferer(this.opts.topology, this.selfId, this.hostId, peerId);
     connect = async () => {
         const channel = this.ctx.supabase.channel(`foyer:net:${this.roomId}`, {
             config: { broadcast: { self: false, ack: true }, presence: { key: this.selfId } },

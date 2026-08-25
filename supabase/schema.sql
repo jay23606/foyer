@@ -191,3 +191,61 @@ drop trigger if exists foyer_close_empty_room on public.foyer_room_players;
 create trigger foyer_close_empty_room
 	after delete on public.foyer_room_players
 	for each row execute function public.foyer_close_empty_room();
+
+-- ------------------------------------------------------------------- queue
+-- Random pairing, for apps that meet strangers rather than book rooms.
+--
+-- Anonymous by design: this holds an ephemeral random id and a tag, no profile
+-- and no auth user, so there is nothing here worth protecting and the policy
+-- is open to anon. Apps built on it hold no accounts and want none.
+create table if not exists public.foyer_queue (
+	client_id text primary key,
+	tag       text not null default 'default',
+	joined_at timestamptz not null default now()
+);
+create index if not exists foyer_queue_tag_idx on public.foyer_queue (tag, joined_at);
+
+alter table public.foyer_queue enable row level security;
+do $$ begin
+	create policy "foyer_queue open" on public.foyer_queue
+		for all to anon, authenticated using (true) with check (true);
+exception when duplicate_object then null; end $$;
+
+-- Claim a waiting stranger, or advertise yourself if none are waiting.
+-- Returns the claimed id, or null if you were added to the queue to wait.
+--
+-- One statement rather than a read then a write: two people asking at the same
+-- moment must not both be handed the same partner, and `for update skip locked`
+-- is what makes that impossible rather than merely unlikely.
+create or replace function public.foyer_claim_peer(my_id text, my_tag text default 'default')
+returns text
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+	claimed text;
+begin
+	-- Drop our own stale slot, and reap waiters who left without saying so.
+	delete from public.foyer_queue where client_id = my_id;
+	delete from public.foyer_queue where joined_at < now() - interval '60 seconds';
+
+	delete from public.foyer_queue
+	 where client_id = (
+		 select client_id from public.foyer_queue
+			where client_id <> my_id and tag = my_tag
+			order by joined_at
+			for update skip locked
+			limit 1
+	 )
+	 returning client_id into claimed;
+
+	if claimed is null then
+		insert into public.foyer_queue (client_id, tag) values (my_id, my_tag)
+			on conflict (client_id) do update set joined_at = now(), tag = excluded.tag;
+	end if;
+	return claimed;
+end;
+$$;
+
+grant execute on function public.foyer_claim_peer(text, text) to anon, authenticated;

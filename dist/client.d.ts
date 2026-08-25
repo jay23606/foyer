@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { CreateRoomOptions, FoyerOptions, Player, Room, Unsubscribe } from './types.js';
 import { RoomHandle } from './room.js';
+import { type QueueOptions, type QueuePeer } from './queue.js';
 /** Internal handle passed to rooms so they inherit configuration. */
 export type FoyerContext = {
     supabase: SupabaseClient;
@@ -47,6 +48,15 @@ export declare class Foyer {
     createRoom: <TMeta = Record<string, unknown>>(options?: CreateRoomOptions<TMeta>) => Promise<RoomHandle<TMeta>>;
     /** Joins by room id or by the short code, whichever you have. */
     join: <TMeta = Record<string, unknown>>(idOrCode: string) => Promise<RoomHandle<TMeta>>;
+    /**
+     * Pairs with whoever is waiting, or waits to be paired with.
+     *
+     * The other way to meet someone: `join` needs a room you already know
+     * about, this needs nothing. Anonymous on purpose -- it never touches
+     * profiles or auth, because the apps that want random pairing hold no
+     * accounts and want none.
+     */
+    queue: (options?: QueueOptions) => Promise<QueuePeer>;
     private toRoom;
 }
 export declare const createFoyer: (options: FoyerOptions) => Foyer;

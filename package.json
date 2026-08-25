@@ -1,6 +1,6 @@
 {
   "name": "@jay23606/foyer",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Peer-to-peer rooms for Supabase. Lobbies, presence, chat, moderation and voice, with no server.",
   "type": "module",
   "main": "./dist/index.js",
@@ -13,12 +13,16 @@
   },
   "files": [
     "dist",
-    "supabase"
+    "supabase",
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "prepare": "npm run build"
+    "prepare": "npm run build",
+    "test": "npm run build && node --test test/*.test.js",
+    "prepublishOnly": "npm run test"
   },
   "peerDependencies": {
     "@supabase/supabase-js": "^2.0.0"

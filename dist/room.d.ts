@@ -90,5 +90,13 @@ export declare class RoomHandle<TMeta = Record<string, unknown>> {
      * gesture. Always a mesh and always its own connections -- see voice.ts.
      */
     voice: () => VoiceMesh;
+    /**
+     * The same mesh under the name that fits when it carries pictures.
+     *
+     * `start({ audio: true, video: true })` and listen with `onStream`; a mesh
+     * carrying video does not play itself, because only the app knows where the
+     * picture goes.
+     */
+    media: () => VoiceMesh;
 }
 export {};

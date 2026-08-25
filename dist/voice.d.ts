@@ -14,12 +14,20 @@ export declare class VoiceMesh {
     private pendingIce;
     private status;
     private listeners;
+    private streamListeners;
+    private leaveListeners;
     private mutedFlag;
+    private cameraOffFlag;
+    private audioOnly;
     constructor(ctx: FoyerContext, roomId: string);
     get muted(): boolean;
     get currentStatus(): VoiceStatus;
     get peerCount(): number;
     onStatus: (listener: VoiceListener) => Unsubscribe;
+    /** Fires when a peer's media arrives. Attach it to a <video> yourself. */
+    onStream: (listener: (peerId: string, stream: MediaStream) => void) => Unsubscribe;
+    /** Fires when a peer goes away, so their tile can be removed. */
+    onLeave: (listener: (peerId: string) => void) => Unsubscribe;
     private setStatus;
     /**
      * Call this from a click or a keypress. getUserMedia prompts for
@@ -29,10 +37,13 @@ export declare class VoiceMesh {
      * Returns the status it settled on, so callers never have to re-read a
      * getter whose value this call just changed.
      */
-    start: () => Promise<VoiceStatus>;
+    start: (request?: MediaStreamConstraints | MediaStream) => Promise<VoiceStatus>;
     stop: () => void;
     setMuted: (muted: boolean) => void;
     toggleMuted: () => boolean;
+    get cameraOff(): boolean;
+    setCameraOff: (off: boolean) => void;
+    toggleCamera: () => boolean;
     private applyMute;
     private stopTracks;
     private openChannel;
@@ -62,3 +73,12 @@ export type StandaloneVoiceOptions = {
  * name and a stable id, and nothing else foyer owns.
  */
 export declare const createVoiceMesh: (options: StandaloneVoiceOptions) => VoiceMesh;
+/**
+ * The same mesh, named for what it now carries.
+ *
+ * `VoiceMesh` began audio-only and the name stuck; it takes constraints or a
+ * ready-made stream, so it carries video and shared screens too. Both names
+ * refer to one class, and the voice spelling stays because callers depend on it.
+ */
+export { VoiceMesh as MediaMesh };
+export declare const createMediaMesh: (options: StandaloneVoiceOptions) => VoiceMesh;

@@ -272,4 +272,12 @@ export class RoomHandle {
         this.mesh ??= new VoiceMesh(this.ctx, this.id);
         return this.mesh;
     };
+    /**
+     * The same mesh under the name that fits when it carries pictures.
+     *
+     * `start({ audio: true, video: true })` and listen with `onStream`; a mesh
+     * carrying video does not play itself, because only the app knows where the
+     * picture goes.
+     */
+    media = () => this.voice();
 }

@@ -4,4 +4,4 @@ export { PeerNet } from './net.js';
 export { pair, QueuePeer } from './queue.js';
 export { shouldConnect, isOfferer } from './topology.js';
 export { makeCode, CODE_ALPHABET } from './codes.js';
-export { VoiceMesh, createVoiceMesh } from './voice.js';
+export { VoiceMesh, MediaMesh, createVoiceMesh, createMediaMesh } from './voice.js';

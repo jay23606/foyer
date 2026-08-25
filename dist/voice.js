@@ -16,6 +16,10 @@
 // unmuted, for that same reason. Muting flips `track.enabled`, which is
 // instant and cannot fail.
 const SIGNAL = 'voice-signal';
+// A predicate rather than an inline `instanceof`. The compound guard that also
+// checks MediaStream exists does not narrow the other branch, so the
+// constraints path still saw a MediaStream in its union.
+const isStream = (r) => typeof MediaStream !== 'undefined' && r instanceof MediaStream;
 export class VoiceMesh {
     ctx;
     roomId;
@@ -27,7 +31,14 @@ export class VoiceMesh {
     pendingIce = new Map();
     status = 'off';
     listeners = new Set();
+    streamListeners = new Set();
+    leaveListeners = new Set();
     mutedFlag = true;
+    cameraOffFlag = false;
+    // Audio-only meshes play themselves through a hidden element, because an
+    // app that asked for voice should not have to render anything. A mesh
+    // carrying video cannot: only the app knows where the picture goes.
+    audioOnly = true;
     constructor(ctx, roomId) {
         this.ctx = ctx;
         this.roomId = roomId;
@@ -41,6 +52,16 @@ export class VoiceMesh {
         listener(this.status);
         return () => { this.listeners.delete(listener); };
     };
+    /** Fires when a peer's media arrives. Attach it to a <video> yourself. */
+    onStream = (listener) => {
+        this.streamListeners.add(listener);
+        return () => { this.streamListeners.delete(listener); };
+    };
+    /** Fires when a peer goes away, so their tile can be removed. */
+    onLeave = (listener) => {
+        this.leaveListeners.add(listener);
+        return () => { this.leaveListeners.delete(listener); };
+    };
     setStatus = (status, detail) => {
         this.status = status;
         this.listeners.forEach(l => l(status, detail));
@@ -53,21 +74,39 @@ export class VoiceMesh {
      * Returns the status it settled on, so callers never have to re-read a
      * getter whose value this call just changed.
      */
-    start = async () => {
+    start = async (request) => {
         if (this.status === 'live' || this.status === 'starting')
             return this.status;
         this.setStatus('starting');
+        // A stream the app already has -- a camera preview, a shared screen --
+        // is used as given rather than opening a second capture.
+        if (isStream(request)) {
+            this.stream = request;
+            this.audioOnly = request.getVideoTracks().length === 0;
+            this.applyMute();
+            try {
+                await this.openChannel();
+            }
+            catch (err) {
+                this.setStatus('unavailable', String(err));
+                return this.status;
+            }
+            this.setStatus('live');
+            return this.status;
+        }
         if (!globalThis.navigator?.mediaDevices?.getUserMedia) {
             // Absent outside a secure context, which is the usual cause: an app
             // served over plain http on a LAN address rather than https.
             this.setStatus('unavailable', 'a secure context is required for microphone access');
             return this.status;
         }
+        const constraints = request ?? {
+            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+            video: false,
+        };
+        this.audioOnly = !constraints.video;
         try {
-            this.stream = await navigator.mediaDevices.getUserMedia({
-                audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-                video: false,
-            });
+            this.stream = await navigator.mediaDevices.getUserMedia(constraints);
         }
         catch (err) {
             const name = err?.name;
@@ -103,6 +142,13 @@ export class VoiceMesh {
     };
     setMuted = (muted) => { this.mutedFlag = muted; this.applyMute(); };
     toggleMuted = () => { this.setMuted(!this.mutedFlag); return this.mutedFlag; };
+    get cameraOff() { return this.cameraOffFlag; }
+    setCameraOff = (off) => {
+        this.cameraOffFlag = off;
+        // Same reasoning as muting: flip the track rather than renegotiate.
+        this.stream?.getVideoTracks().forEach(t => { t.enabled = !off; });
+    };
+    toggleCamera = () => { this.setCameraOff(!this.cameraOffFlag); return this.cameraOffFlag; };
     applyMute = () => {
         this.stream?.getAudioTracks().forEach(t => { t.enabled = !this.mutedFlag; });
     };
@@ -147,7 +193,7 @@ export class VoiceMesh {
         this.connections.set(peerId, pc);
         const stream = this.stream;
         if (stream)
-            stream.getAudioTracks().forEach(t => { pc.addTrack(t, stream); });
+            stream.getTracks().forEach(t => { pc.addTrack(t, stream); });
         pc.addEventListener('icecandidate', event => {
             if (!event.candidate)
                 return;
@@ -158,8 +204,11 @@ export class VoiceMesh {
         });
         pc.addEventListener('track', event => {
             const remote = event.streams[0];
-            if (remote)
+            if (!remote)
+                return;
+            if (this.audioOnly)
                 this.attachAudio(peerId, remote);
+            this.streamListeners.forEach(l => l(peerId, remote));
         });
         pc.addEventListener('connectionstatechange', () => {
             if (pc.connectionState === 'failed' || pc.connectionState === 'closed')
@@ -245,10 +294,15 @@ export class VoiceMesh {
         this.audio.delete(peerId);
     };
     drop = (peerId) => {
-        this.connections.get(peerId)?.close();
-        this.connections.delete(peerId);
+        // Take it before removing it: deleting first leaves nothing to close,
+        // and the connection would leak.
+        const pc = this.connections.get(peerId);
+        const had = this.connections.delete(peerId);
+        pc?.close();
         this.pendingIce.delete(peerId);
         this.dropAudio(peerId);
+        if (had)
+            this.leaveListeners.forEach(l => l(peerId));
     };
 }
 /**
@@ -271,3 +325,12 @@ export const createVoiceMesh = (options) => {
     };
     return new VoiceMesh(ctx, options.roomId);
 };
+/**
+ * The same mesh, named for what it now carries.
+ *
+ * `VoiceMesh` began audio-only and the name stuck; it takes constraints or a
+ * ready-made stream, so it carries video and shared screens too. Both names
+ * refer to one class, and the voice spelling stays because callers depend on it.
+ */
+export { VoiceMesh as MediaMesh };
+export const createMediaMesh = createVoiceMesh;

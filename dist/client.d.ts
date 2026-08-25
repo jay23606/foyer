@@ -16,6 +16,7 @@ export type FoyerContext = {
     videoQuality: ((peers: number) => VideoQuality) | null;
     graceMs: number;
     audioConstraints: MediaTrackConstraints | undefined;
+    hostMigration: boolean;
 };
 export declare class Foyer {
     private readonly supabase;
@@ -27,6 +28,7 @@ export declare class Foyer {
     private readonly codeAlphabet;
     private readonly graceMs;
     private readonly audio;
+    private readonly migrate;
     private current;
     constructor(options: FoyerOptions);
     /** The signed-in player, or null. */

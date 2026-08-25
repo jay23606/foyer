@@ -1,5 +1,5 @@
 import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js'
-import type { Unsubscribe } from './types.js'
+import type { Unsubscribe, VideoQuality } from './types.js'
 
 // Random pairing.
 //
@@ -31,6 +31,12 @@ export type QueueOptions = {
 	iceServers?: RTCIceServer[]
 	/** Table prefix, matching the schema. */
 	prefix?: string
+	/**
+	 * Video quality. A pairing is always two people, so the curve is asked for
+	 * one receiver -- but it is the same curve a room uses, so an app that
+	 * tunes quality tunes it everywhere rather than only half its connections.
+	 */
+	videoQuality?: (peers: number) => VideoQuality
 }
 
 type Events = {
@@ -86,6 +92,10 @@ export class QueuePeer {
 
 const DEFAULT_ICE: RTCIceServer[] = [{ urls: 'stun:stun.l.google.com:19302' }]
 
+// Matches the room mesh's curve at a single receiver, so a pairing and a
+// two-person room look the same rather than differing by accident.
+const defaultQuality = (): VideoQuality => ({ maxBitrate: 600_000, scaleResolutionDownBy: 1 })
+
 /**
  * Pairs with whoever is waiting, or waits to be paired with.
  *
@@ -134,8 +144,28 @@ export const pair = async (
 			pc = conn
 			peer = new QueuePeer(other, conn)
 
+			const videoSenders = new Set<RTCRtpSender>()
 			if (options.media) {
-				options.media.getTracks().forEach(t => conn.addTrack(t, options.media as MediaStream))
+				options.media.getTracks().forEach(t => {
+					const sender = conn.addTrack(t, options.media as MediaStream)
+					if (t.kind === 'video') videoSenders.add(sender)
+				})
+			}
+
+			// One receiver, because a pairing is two people. Applied through the
+			// sender's parameters, so it needs no renegotiation.
+			const applyQuality = async (): Promise<void> => {
+				const curve = options.videoQuality ?? defaultQuality
+				const { maxBitrate, scaleResolutionDownBy } = curve(1)
+				for (const sender of videoSenders) {
+					try {
+						const params = sender.getParameters()
+						if (!params.encodings || params.encodings.length === 0) params.encodings = [{}]
+						params.encodings[0]!.maxBitrate = maxBitrate
+						params.encodings[0]!.scaleResolutionDownBy = scaleResolutionDownBy
+						await sender.setParameters(params)
+					} catch { /* sender closed, or the browser refused the shape */ }
+				}
 			}
 
 			conn.addEventListener('icecandidate', e => {
@@ -152,6 +182,8 @@ export const pair = async (
 			})
 
 			conn.addEventListener('connectionstatechange', () => {
+				// Parameters only stick once the sender is negotiated.
+				if (conn.connectionState === 'connected') void applyQuality()
 				if (conn.connectionState === 'connected' && peer) succeed(peer)
 				if ((conn.connectionState === 'failed' || conn.connectionState === 'closed') && peer) {
 					peer.emit('close', undefined)

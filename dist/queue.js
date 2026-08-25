@@ -50,6 +50,9 @@ export class QueuePeer {
     };
 }
 const DEFAULT_ICE = [{ urls: 'stun:stun.l.google.com:19302' }];
+// Matches the room mesh's curve at a single receiver, so a pairing and a
+// two-person room look the same rather than differing by accident.
+const defaultQuality = () => ({ maxBitrate: 600_000, scaleResolutionDownBy: 1 });
 /**
  * Pairs with whoever is waiting, or waits to be paired with.
  *
@@ -94,9 +97,31 @@ export const pair = async (supabase, options = {}) => {
             const conn = new RTCPeerConnection({ iceServers: ice });
             pc = conn;
             peer = new QueuePeer(other, conn);
+            const videoSenders = new Set();
             if (options.media) {
-                options.media.getTracks().forEach(t => conn.addTrack(t, options.media));
+                options.media.getTracks().forEach(t => {
+                    const sender = conn.addTrack(t, options.media);
+                    if (t.kind === 'video')
+                        videoSenders.add(sender);
+                });
             }
+            // One receiver, because a pairing is two people. Applied through the
+            // sender's parameters, so it needs no renegotiation.
+            const applyQuality = async () => {
+                const curve = options.videoQuality ?? defaultQuality;
+                const { maxBitrate, scaleResolutionDownBy } = curve(1);
+                for (const sender of videoSenders) {
+                    try {
+                        const params = sender.getParameters();
+                        if (!params.encodings || params.encodings.length === 0)
+                            params.encodings = [{}];
+                        params.encodings[0].maxBitrate = maxBitrate;
+                        params.encodings[0].scaleResolutionDownBy = scaleResolutionDownBy;
+                        await sender.setParameters(params);
+                    }
+                    catch { /* sender closed, or the browser refused the shape */ }
+                }
+            };
             conn.addEventListener('icecandidate', e => {
                 if (!e.candidate)
                     return;
@@ -111,6 +136,9 @@ export const pair = async (supabase, options = {}) => {
                     peer.emit('stream', remote);
             });
             conn.addEventListener('connectionstatechange', () => {
+                // Parameters only stick once the sender is negotiated.
+                if (conn.connectionState === 'connected')
+                    void applyQuality();
                 if (conn.connectionState === 'connected' && peer)
                     succeed(peer);
                 if ((conn.connectionState === 'failed' || conn.connectionState === 'closed') && peer) {

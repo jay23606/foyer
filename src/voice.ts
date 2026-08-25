@@ -24,14 +24,14 @@ const SIGNAL = 'voice-signal'
 
 type Signal = { kind: 'hello' | 'sdp' | 'ice', from: string, to: string | null, data?: string }
 
-export type VoiceStatus =
+export type MediaStatus =
 	| 'off'
 	| 'starting'
 	| 'live'
 	| 'denied'        // the browser refused, usually no permission
 	| 'unavailable'   // no microphone, or an insecure context
 
-export type VoiceListener = (status: VoiceStatus, detail?: string) => void
+export type MediaListener = (status: MediaStatus, detail?: string) => void
 
 // A predicate rather than an inline `instanceof`. The compound guard that also
 // checks MediaStream exists does not narrow the other branch, so the
@@ -39,7 +39,7 @@ export type VoiceListener = (status: VoiceStatus, detail?: string) => void
 const isStream = (r: MediaStreamConstraints | MediaStream | undefined): r is MediaStream =>
 	typeof MediaStream !== 'undefined' && r instanceof MediaStream
 
-export class VoiceMesh {
+export class MediaMesh {
 	private readonly ctx: FoyerContext
 	private readonly roomId: string
 	private readonly selfId: string
@@ -50,8 +50,8 @@ export class VoiceMesh {
 	private audio = new Map<string, HTMLAudioElement>()
 	private pendingIce = new Map<string, RTCIceCandidateInit[]>()
 
-	private status: VoiceStatus = 'off'
-	private listeners = new Set<VoiceListener>()
+	private status: MediaStatus = 'off'
+	private listeners = new Set<MediaListener>()
 	private streamListeners = new Set<(peerId: string, stream: MediaStream) => void>()
 	private leaveListeners = new Set<(peerId: string) => void>()
 	private mutedFlag = true
@@ -72,10 +72,10 @@ export class VoiceMesh {
 	}
 
 	get muted(): boolean { return this.mutedFlag }
-	get currentStatus(): VoiceStatus { return this.status }
+	get currentStatus(): MediaStatus { return this.status }
 	get peerCount(): number { return this.connections.size }
 
-	onStatus = (listener: VoiceListener): Unsubscribe => {
+	onStatus = (listener: MediaListener): Unsubscribe => {
 		this.listeners.add(listener)
 		listener(this.status)
 		return () => { this.listeners.delete(listener) }
@@ -93,7 +93,7 @@ export class VoiceMesh {
 		return () => { this.leaveListeners.delete(listener) }
 	}
 
-	private setStatus = (status: VoiceStatus, detail?: string): void => {
+	private setStatus = (status: MediaStatus, detail?: string): void => {
 		this.status = status
 		this.listeners.forEach(l => l(status, detail))
 	}
@@ -106,7 +106,7 @@ export class VoiceMesh {
 	 * Returns the status it settled on, so callers never have to re-read a
 	 * getter whose value this call just changed.
 	 */
-	start = async (request?: MediaStreamConstraints | MediaStream): Promise<VoiceStatus> => {
+	start = async (request?: MediaStreamConstraints | MediaStream): Promise<MediaStatus> => {
 		if (this.status === 'live' || this.status === 'starting') return this.status
 		this.setStatus('starting')
 
@@ -448,7 +448,7 @@ export class VoiceMesh {
 	}
 }
 
-export type StandaloneVoiceOptions = {
+export type StandaloneMediaOptions = {
 	supabase: SupabaseClient
 	/** Any stable string shared by everyone who should hear each other. */
 	roomId: string
@@ -468,28 +468,20 @@ export type StandaloneVoiceOptions = {
  * be a poor trade, so the mesh is constructible on its own: it needs a channel
  * name and a stable id, and nothing else foyer owns.
  */
-export const createVoiceMesh = (options: StandaloneVoiceOptions): VoiceMesh => {
+export const createMediaMesh = (options: StandaloneMediaOptions): MediaMesh => {
 	const player = { id: options.playerId, name: '' }
 	const ctx: FoyerContext = {
 		supabase: options.supabase,
-		// Voice touches no tables; the mesh is entirely broadcast and presence.
+		// The mesh touches no tables; it is entirely broadcast and presence.
 		table: (name: string) => name,
 		iceServers: options.iceServers ?? [{ urls: 'stun:stun.l.google.com:19302' }],
 		rest: null,
 		videoQuality: options.videoQuality ?? null,
 		graceMs: options.peerGraceMs ?? 0,
 		audioConstraints: options.audioConstraints,
+		// A standalone mesh has no room to hand anyone.
+		hostMigration: false,
 		requirePlayer: () => player,
 	}
-	return new VoiceMesh(ctx, options.roomId)
+	return new MediaMesh(ctx, options.roomId)
 }
-
-/**
- * The same mesh, named for what it now carries.
- *
- * `VoiceMesh` began audio-only and the name stuck; it takes constraints or a
- * ready-made stream, so it carries video and shared screens too. Both names
- * refer to one class, and the voice spelling stays because callers depend on it.
- */
-export { VoiceMesh as MediaMesh }
-export const createMediaMesh = createVoiceMesh

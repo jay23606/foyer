@@ -20,7 +20,7 @@ const SIGNAL = 'voice-signal';
 // checks MediaStream exists does not narrow the other branch, so the
 // constraints path still saw a MediaStream in its union.
 const isStream = (r) => typeof MediaStream !== 'undefined' && r instanceof MediaStream;
-export class VoiceMesh {
+export class MediaMesh {
     ctx;
     roomId;
     selfId;
@@ -430,27 +430,20 @@ export class VoiceMesh {
  * be a poor trade, so the mesh is constructible on its own: it needs a channel
  * name and a stable id, and nothing else foyer owns.
  */
-export const createVoiceMesh = (options) => {
+export const createMediaMesh = (options) => {
     const player = { id: options.playerId, name: '' };
     const ctx = {
         supabase: options.supabase,
-        // Voice touches no tables; the mesh is entirely broadcast and presence.
+        // The mesh touches no tables; it is entirely broadcast and presence.
         table: (name) => name,
         iceServers: options.iceServers ?? [{ urls: 'stun:stun.l.google.com:19302' }],
         rest: null,
         videoQuality: options.videoQuality ?? null,
         graceMs: options.peerGraceMs ?? 0,
         audioConstraints: options.audioConstraints,
+        // A standalone mesh has no room to hand anyone.
+        hostMigration: false,
         requirePlayer: () => player,
     };
-    return new VoiceMesh(ctx, options.roomId);
+    return new MediaMesh(ctx, options.roomId);
 };
-/**
- * The same mesh, named for what it now carries.
- *
- * `VoiceMesh` began audio-only and the name stuck; it takes constraints or a
- * ready-made stream, so it carries video and shared screens too. Both names
- * refer to one class, and the voice spelling stays because callers depend on it.
- */
-export { VoiceMesh as MediaMesh };
-export const createMediaMesh = createVoiceMesh;

@@ -4,10 +4,10 @@ export { PeerNet } from './net.js'
 export { pair, QueuePeer } from './queue.js'
 export { shouldConnect, isOfferer } from './topology.js'
 export { makeCode, CODE_ALPHABET } from './codes.js'
-export { VoiceMesh, MediaMesh, createVoiceMesh, createMediaMesh } from './voice.js'
+export { MediaMesh, createMediaMesh } from './voice.js'
 export type { Peer, PeerOptions } from './net.js'
 export type { QueueOptions } from './queue.js'
-export type { VoiceStatus, VoiceListener, StandaloneVoiceOptions } from './voice.js'
+export type { MediaStatus, MediaListener, StandaloneMediaOptions } from './voice.js'
 export type {
 	CreateRoomOptions,
 	FoyerOptions,

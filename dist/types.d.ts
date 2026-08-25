@@ -127,6 +127,15 @@ export type FoyerOptions = {
      * constraints or your own stream to start().
      */
     audioConstraints?: MediaTrackConstraints;
+    /**
+     * Hand a room to someone else when its host leaves, rather than closing it.
+     *
+     * Off by default, because whether a host is replaceable depends entirely on
+     * the app. A game whose host is also the server should let the room die
+     * with it; a conversation should carry on. The longest-present player is
+     * promoted, which every client works out identically.
+     */
+    hostMigration?: boolean;
 };
 export type CreateRoomOptions<TMeta> = {
     name?: string;

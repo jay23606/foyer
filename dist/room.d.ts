@@ -1,9 +1,10 @@
 import type { FoyerContext } from './client.js';
 import type { Message, Room, RoomPlayer, Unsubscribe } from './types.js';
 import { PeerNet, type PeerOptions } from './net.js';
-import { VoiceMesh } from './voice.js';
+import { MediaMesh } from './voice.js';
 type Events = {
     players: RoomPlayer[];
+    host: string;
     metadata: unknown;
     status: string;
     message: Message;
@@ -89,7 +90,7 @@ export declare class RoomHandle<TMeta = Record<string, unknown>> {
      * Nothing happens until you call `start()`, which must come from a user
      * gesture. Always a mesh and always its own connections -- see voice.ts.
      */
-    voice: () => VoiceMesh;
+    voice: () => MediaMesh;
     /**
      * The same mesh under the name that fits when it carries pictures.
      *
@@ -97,6 +98,6 @@ export declare class RoomHandle<TMeta = Record<string, unknown>> {
      * carrying video does not play itself, because only the app knows where the
      * picture goes.
      */
-    media: () => VoiceMesh;
+    media: () => MediaMesh;
 }
 export {};

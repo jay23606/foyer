@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { Unsubscribe } from './types.js';
+import type { Unsubscribe, VideoQuality } from './types.js';
 export type QueueOptions = {
     /** Which queue. Separate tags never meet, so one table serves many apps. */
     tag?: string;
@@ -11,6 +11,12 @@ export type QueueOptions = {
     iceServers?: RTCIceServer[];
     /** Table prefix, matching the schema. */
     prefix?: string;
+    /**
+     * Video quality. A pairing is always two people, so the curve is asked for
+     * one receiver -- but it is the same curve a room uses, so an app that
+     * tunes quality tunes it everywhere rather than only half its connections.
+     */
+    videoQuality?: (peers: number) => VideoQuality;
 };
 type Events = {
     data: unknown;

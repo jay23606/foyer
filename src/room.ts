@@ -2,10 +2,11 @@ import type { RealtimeChannel } from '@supabase/supabase-js'
 import type { FoyerContext } from './client.js'
 import type { Message, Room, RoomPlayer, Unsubscribe } from './types.js'
 import { PeerNet, type PeerOptions } from './net.js'
-import { VoiceMesh } from './voice.js'
+import { MediaMesh } from './voice.js'
 
 type Events = {
 	players: RoomPlayer[]
+	host: string
 	metadata: unknown
 	status: string
 	message: Message
@@ -31,7 +32,7 @@ export class RoomHandle<TMeta = Record<string, unknown>> {
 	private listeners = new Map<keyof Events, Set<Listener<never>>>()
 	private unloadHandler: (() => void) | null = null
 	private net: PeerNet | null = null
-	private mesh: VoiceMesh | null = null
+	private mesh: MediaMesh | null = null
 
 	constructor(ctx: FoyerContext, room: Room<TMeta>) {
 		this.ctx = ctx
@@ -157,6 +158,24 @@ export class RoomHandle<TMeta = Record<string, unknown>> {
 			joinedAt: row.joined_at,
 		}))
 		this.emit('players', this.roster)
+
+		// The host's seat is empty. Everyone notices at once and everyone asks;
+		// the function promotes the longest-present player and tells the rest
+		// there was nothing to do, so the duplicate calls cost a round trip and
+		// change nothing.
+		if (
+			this.ctx.hostMigration &&
+			this.roster.length > 0 &&
+			!this.roster.some(p => p.id === this.data.hostId)
+		) {
+			const { data: promoted } = await this.ctx.supabase
+				.rpc(`${this.ctx.table('promote_host')}`, { target_room: this.id })
+			if (promoted) {
+				this.data = { ...this.data, hostId: promoted as string }
+				this.emit('host', promoted as string)
+				void this.refreshPlayers()
+			}
+		}
 	}
 
 	private subscribe = (): void => {
@@ -170,7 +189,15 @@ export class RoomHandle<TMeta = Record<string, unknown>> {
 				{ event: 'UPDATE', schema: 'public', table: this.ctx.table('rooms'), filter: `id=eq.${this.id}` },
 				({ new: row }: any) => {
 					const wasOpen = this.data.isOpen
-					this.data = { ...this.data, metadata: row.metadata, status: row.status, isOpen: row.is_open }
+					const hostChanged = row.host_id !== this.data.hostId
+					this.data = {
+						...this.data,
+						metadata: row.metadata,
+						status: row.status,
+						isOpen: row.is_open,
+						hostId: row.host_id,
+					}
+					if (hostChanged) this.emit('host', row.host_id)
 					this.emit('metadata', row.metadata)
 					this.emit('status', row.status)
 					if (wasOpen && !row.is_open) this.emit('closed', undefined)
@@ -316,8 +343,8 @@ export class RoomHandle<TMeta = Record<string, unknown>> {
 	 * Nothing happens until you call `start()`, which must come from a user
 	 * gesture. Always a mesh and always its own connections -- see voice.ts.
 	 */
-	voice = (): VoiceMesh => {
-		this.mesh ??= new VoiceMesh(this.ctx, this.id)
+	voice = (): MediaMesh => {
+		this.mesh ??= new MediaMesh(this.ctx, this.id)
 		return this.mesh
 	}
 
@@ -328,5 +355,5 @@ export class RoomHandle<TMeta = Record<string, unknown>> {
 	 * carrying video does not play itself, because only the app knows where the
 	 * picture goes.
 	 */
-	media = (): VoiceMesh => this.voice()
+	media = (): MediaMesh => this.voice()
 }

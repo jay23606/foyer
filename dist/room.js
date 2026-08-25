@@ -1,5 +1,5 @@
 import { PeerNet } from './net.js';
-import { VoiceMesh } from './voice.js';
+import { MediaMesh } from './voice.js';
 /**
  * A room you are in.
  *
@@ -127,6 +127,21 @@ export class RoomHandle {
             joinedAt: row.joined_at,
         }));
         this.emit('players', this.roster);
+        // The host's seat is empty. Everyone notices at once and everyone asks;
+        // the function promotes the longest-present player and tells the rest
+        // there was nothing to do, so the duplicate calls cost a round trip and
+        // change nothing.
+        if (this.ctx.hostMigration &&
+            this.roster.length > 0 &&
+            !this.roster.some(p => p.id === this.data.hostId)) {
+            const { data: promoted } = await this.ctx.supabase
+                .rpc(`${this.ctx.table('promote_host')}`, { target_room: this.id });
+            if (promoted) {
+                this.data = { ...this.data, hostId: promoted };
+                this.emit('host', promoted);
+                void this.refreshPlayers();
+            }
+        }
     };
     subscribe = () => {
         const self = this.ctx.requirePlayer();
@@ -135,7 +150,16 @@ export class RoomHandle {
             .on('postgres_changes', { event: '*', schema: 'public', table: this.ctx.table('room_players'), filter: `room_id=eq.${this.id}` }, () => { void this.refreshPlayers(); })
             .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: this.ctx.table('rooms'), filter: `id=eq.${this.id}` }, ({ new: row }) => {
             const wasOpen = this.data.isOpen;
-            this.data = { ...this.data, metadata: row.metadata, status: row.status, isOpen: row.is_open };
+            const hostChanged = row.host_id !== this.data.hostId;
+            this.data = {
+                ...this.data,
+                metadata: row.metadata,
+                status: row.status,
+                isOpen: row.is_open,
+                hostId: row.host_id,
+            };
+            if (hostChanged)
+                this.emit('host', row.host_id);
             this.emit('metadata', row.metadata);
             this.emit('status', row.status);
             if (wasOpen && !row.is_open)
@@ -283,7 +307,7 @@ export class RoomHandle {
      * gesture. Always a mesh and always its own connections -- see voice.ts.
      */
     voice = () => {
-        this.mesh ??= new VoiceMesh(this.ctx, this.id);
+        this.mesh ??= new MediaMesh(this.ctx, this.id);
         return this.mesh;
     };
     /**

@@ -110,8 +110,8 @@ Muting and camera toggles flip `track.enabled` rather than adding or removing
 tracks, because changing tracks on a live connection triggers renegotiation:
 a fresh offer and answer in the middle of a call.
 
-`room.voice()` and `room.media()` are the same mesh. The voice spelling stays
-because callers depend on it.
+One mesh, one name. It began audio-only and was called `VoiceMesh`; it carries
+video now, so it is `MediaMesh`, reached through `room.media()`.
 
 ## Topology is a decision, so foyer makes you state it
 
@@ -159,6 +159,7 @@ Sensible defaults, adjustable where an app might reasonably differ.
 | `codeAlphabet` | no `O`/`0`, no `I`/`1` | add or remove characters |
 | `peerGraceMs` | `0` | tolerate a stumbling connection instead of dropping it |
 | `audioConstraints` | echo cancellation on | sending music rather than speech |
+| `hostMigration` | `false` | a room that should outlive its host |
 | `url`, `anonKey` | read off the client | avoid undocumented fields |
 
 Per call rather than per client: `topology` on `connect`, `tag` and
@@ -193,10 +194,14 @@ netquake keeps its own signalling broker rather than using `PeerNet`, because
 its engine owns peer connections through its own interface and wants only the
 offers and candidates.
 
-Two gaps worth knowing. Video has been verified with synthetic streams rather
-than a real camera, so the capture path itself is untested. And the queue sends
-media at whatever the browser chooses -- the quality curve applies to the room
-mesh only, which is an inconsistency rather than a decision.
+When a host leaves, the room closes by default -- correct for a game whose host
+is also the server, wrong for a conversation. `hostMigration` promotes the
+longest-present player instead. Every client works out the same successor, so it
+does not matter who notices first.
+
+One gap worth knowing: video has been verified with synthetic streams rather
+than a real camera, so the capture path itself is untested. The star topology
+also has no consumer -- p2p-chat uses a mesh and netquake keeps its own broker.
 
 The topology rules and room-code generation are covered by tests (`npm test`),
 including the two properties a bug would break: that both peers agree a pair

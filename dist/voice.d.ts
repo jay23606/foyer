@@ -1,9 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { FoyerContext } from './client.js';
 import type { Unsubscribe, VideoQuality } from './types.js';
-export type VoiceStatus = 'off' | 'starting' | 'live' | 'denied' | 'unavailable';
-export type VoiceListener = (status: VoiceStatus, detail?: string) => void;
-export declare class VoiceMesh {
+export type MediaStatus = 'off' | 'starting' | 'live' | 'denied' | 'unavailable';
+export type MediaListener = (status: MediaStatus, detail?: string) => void;
+export declare class MediaMesh {
     private readonly ctx;
     private readonly roomId;
     private readonly selfId;
@@ -23,9 +23,9 @@ export declare class VoiceMesh {
     private videoSending;
     constructor(ctx: FoyerContext, roomId: string);
     get muted(): boolean;
-    get currentStatus(): VoiceStatus;
+    get currentStatus(): MediaStatus;
     get peerCount(): number;
-    onStatus: (listener: VoiceListener) => Unsubscribe;
+    onStatus: (listener: MediaListener) => Unsubscribe;
     /** Fires when a peer's media arrives. Attach it to a <video> yourself. */
     onStream: (listener: (peerId: string, stream: MediaStream) => void) => Unsubscribe;
     /** Fires when a peer goes away, so their tile can be removed. */
@@ -39,7 +39,7 @@ export declare class VoiceMesh {
      * Returns the status it settled on, so callers never have to re-read a
      * getter whose value this call just changed.
      */
-    start: (request?: MediaStreamConstraints | MediaStream) => Promise<VoiceStatus>;
+    start: (request?: MediaStreamConstraints | MediaStream) => Promise<MediaStatus>;
     stop: () => void;
     setMuted: (muted: boolean) => void;
     toggleMuted: () => boolean;
@@ -91,7 +91,7 @@ export declare class VoiceMesh {
     private dropAudio;
     private drop;
 }
-export type StandaloneVoiceOptions = {
+export type StandaloneMediaOptions = {
     supabase: SupabaseClient;
     /** Any stable string shared by everyone who should hear each other. */
     roomId: string;
@@ -110,13 +110,4 @@ export type StandaloneVoiceOptions = {
  * be a poor trade, so the mesh is constructible on its own: it needs a channel
  * name and a stable id, and nothing else foyer owns.
  */
-export declare const createVoiceMesh: (options: StandaloneVoiceOptions) => VoiceMesh;
-/**
- * The same mesh, named for what it now carries.
- *
- * `VoiceMesh` began audio-only and the name stuck; it takes constraints or a
- * ready-made stream, so it carries video and shared screens too. Both names
- * refer to one class, and the voice spelling stays because callers depend on it.
- */
-export { VoiceMesh as MediaMesh };
-export declare const createMediaMesh: (options: StandaloneVoiceOptions) => VoiceMesh;
+export declare const createMediaMesh: (options: StandaloneMediaOptions) => MediaMesh;

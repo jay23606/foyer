@@ -13,6 +13,7 @@ export class Foyer {
     codeAlphabet;
     graceMs;
     audio;
+    migrate;
     current = null;
     constructor(options) {
         this.supabase = options.supabase;
@@ -30,6 +31,7 @@ export class Foyer {
         this.codeAlphabet = options.codeAlphabet;
         this.graceMs = options.peerGraceMs ?? 0;
         this.audio = options.audioConstraints;
+        this.migrate = options.hostMigration ?? false;
     }
     /** The signed-in player, or null. */
     get player() { return this.current; }
@@ -42,6 +44,7 @@ export class Foyer {
         videoQuality: this.quality,
         graceMs: this.graceMs,
         audioConstraints: this.audio,
+        hostMigration: this.migrate,
         requirePlayer: () => {
             if (!this.current)
                 throw new Error('foyer: not signed in');

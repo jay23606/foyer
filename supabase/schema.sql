@@ -249,3 +249,57 @@ end;
 $$;
 
 grant execute on function public.foyer_claim_peer(text, text) to anon, authenticated;
+
+-- --------------------------------------------------------- host migration
+-- Hands a room to someone else when its host has gone.
+--
+-- Row-level security lets only the host change a room, and the host is exactly
+-- who is missing, so this runs as the definer. It is safe because it decides
+-- nothing: it refuses unless the host's seat is genuinely empty, and then
+-- promotes the player who has been here longest. Every client computes the
+-- same answer, so it does not matter who calls it, and the ones who call late
+-- get null because the room already has a host again.
+--
+-- Whether to call it at all is the app's choice. A game whose host is the
+-- server should let the room die with it; a conversation should not.
+create or replace function public.foyer_promote_host(target_room uuid)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+	next_host uuid;
+begin
+	-- Still seated: nothing to do.
+	if exists (
+		select 1
+		from public.foyer_room_players p
+		join public.foyer_rooms r on r.id = p.room_id
+		where p.room_id = target_room and p.player_id = r.host_id
+	) then
+		return null;
+	end if;
+
+	select player_id into next_host
+	from public.foyer_room_players
+	where room_id = target_room
+	order by joined_at
+	limit 1;
+
+	if next_host is null then
+		return null;   -- nobody left; the empty-room trigger closes it
+	end if;
+
+	update public.foyer_rooms
+		set host_id = next_host, updated_at = now()
+		where id = target_room;
+	update public.foyer_room_players
+		set is_host = (player_id = next_host)
+		where room_id = target_room;
+
+	return next_host;
+end;
+$$;
+
+grant execute on function public.foyer_promote_host(uuid) to anon, authenticated;

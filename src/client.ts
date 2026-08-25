@@ -27,6 +27,7 @@ export type FoyerContext = {
 	audioConstraints: MediaTrackConstraints | undefined
 	hostMigration: boolean
 	reconnectAttempts: number
+	heartbeatMs: number
 }
 
 export class Foyer {
@@ -41,6 +42,8 @@ export class Foyer {
 	private readonly audio: MediaTrackConstraints | undefined
 	private readonly migrate: boolean
 	private readonly retries: number
+	private readonly heartbeatMs: number
+	private readonly staleSeconds: number
 	private current: Player | null = null
 
 	constructor(options: FoyerOptions) {
@@ -62,6 +65,15 @@ export class Foyer {
 		this.audio = options.audioConstraints
 		this.migrate = options.hostMigration ?? false
 		this.retries = options.reconnectAttempts ?? 3
+		this.heartbeatMs = options.heartbeatMs ?? 30_000
+		// A staleness window shorter than the heartbeat evicts players who are
+		// sitting right there, and the symptom -- people dropping out of a room
+		// for no reason -- looks nothing like the cause. Two beats is the floor
+		// rather than one, so a single missed request is never fatal.
+		this.staleSeconds = Math.max(
+			options.staleSeconds ?? 90,
+			Math.ceil((this.heartbeatMs * 2) / 1000)
+		)
 	}
 
 	/** The signed-in player, or null. */
@@ -79,6 +91,7 @@ export class Foyer {
 		audioConstraints: this.audio,
 		hostMigration: this.migrate,
 		reconnectAttempts: this.retries,
+		heartbeatMs: this.heartbeatMs,
 		requirePlayer: () => {
 			if (!this.current) throw new Error('foyer: not signed in')
 			return this.current
@@ -135,6 +148,15 @@ export class Foyer {
 
 	/** Open rooms, newest first. */
 	listRooms = async <TMeta = Record<string, unknown>>(): Promise<Room<TMeta>[]> => {
+		// Sweep before reading, so a room whose players vanished is gone from the
+		// list rather than sitting in it advertising nobody. This is the only
+		// place it needs doing: a stale room costs nothing until somebody looks,
+		// and looking is what this is. Best effort -- a lobby that still lists a
+		// dead room is better than a lobby that throws.
+		try {
+			await this.supabase.rpc(`${this.prefix}reap_rooms`, { stale_seconds: this.staleSeconds })
+		} catch { /* schema predates the reaper */ }
+
 		const { data, error } = await this.supabase
 			.from(this.table('rooms'))
 			.select(`*, ${this.table('room_players')}(count), host:${this.table('profiles')}!${this.table('rooms')}_host_id_fkey(name)`)

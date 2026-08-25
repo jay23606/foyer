@@ -16,6 +16,8 @@ export class RoomHandle {
     channel = null;
     listeners = new Map();
     unloadHandler = null;
+    heartbeat = null;
+    accessToken = null;
     net = null;
     mesh = null;
     constructor(ctx, room) {
@@ -73,8 +75,23 @@ export class RoomHandle {
             .eq('player_id', player.id);
     };
     /**
-     * A closing tab sends no goodbye, so the row would linger and the room
-     * would look occupied. keepalive lets the request outlive the page.
+     * Says goodbye when the tab goes away, and proves we are still here while
+     * it has not.
+     *
+     * Three mechanisms, each covering the way the one before it fails:
+     *
+     *  - `leave()` is the clean path, and the only one that always works.
+     *  - The unload beacon catches a closing tab. Best effort by nature --
+     *    browsers are entitled to skip these handlers entirely.
+     *  - The heartbeat is what lets the database work it out unaided. Stop
+     *    bumping last_seen and foyer_reap_rooms deletes the row, firing the
+     *    same trigger a clean leave would have.
+     *
+     * The beacon must carry the *user's* token rather than the anon key. The
+     * delete policy is `auth.uid() = player_id`, so an anon request matches no
+     * rows and PostgREST answers 204 regardless -- a silent no-op indis-
+     * tinguishable from success. The token is cached because an unload handler
+     * cannot await getSession.
      */
     watchUnload = () => {
         if (typeof window === 'undefined')
@@ -83,17 +100,42 @@ export class RoomHandle {
         if (!rest)
             return;
         const player = this.ctx.requirePlayer();
+        // Never allowed to throw: this runs on a timer with no caller to catch
+        // it, so a failed beat has to be a missed beat and nothing worse. A
+        // schema without last_seen lands here too, which is what lets a client
+        // newer than its database keep working.
+        const beat = async () => {
+            try {
+                const { data } = await this.ctx.supabase.auth.getSession();
+                this.accessToken = data.session?.access_token ?? null;
+                await this.ctx.supabase
+                    .from(this.ctx.table('room_players'))
+                    .update({ last_seen: new Date().toISOString() })
+                    .eq('room_id', this.id)
+                    .eq('player_id', player.id);
+            }
+            catch { /* the next beat will do */ }
+        };
+        void beat();
+        this.heartbeat = setInterval(() => { void beat(); }, this.ctx.heartbeatMs);
         this.unloadHandler = () => {
-            // A normal supabase call cannot finish during unload; keepalive lets
-            // this one outlive the page. Best effort -- presence and the reaper
-            // both cover the case where it does not land.
+            const token = this.accessToken;
+            // With no token the request would delete nothing, so there is no point
+            // spending the beacon on it; the reaper covers this case.
+            if (!token)
+                return;
             void fetch(`${rest.url}/rest/v1/${this.ctx.table('room_players')}`
                 + `?room_id=eq.${this.id}&player_id=eq.${player.id}`, {
                 method: 'DELETE',
                 keepalive: true,
-                headers: { apikey: rest.key, Authorization: `Bearer ${rest.key}` },
+                headers: { apikey: rest.key, Authorization: `Bearer ${token}` },
             }).catch(() => { });
         };
+        // beforeunload alone is not enough: mobile browsers routinely never fire
+        // it -- a phone swiped away from the app goes straight to hidden -- and
+        // that is the case this is most needed for. pagehide is the one both
+        // desktop and mobile agree on.
+        window.addEventListener('pagehide', this.unloadHandler);
         window.addEventListener('beforeunload', this.unloadHandler);
     };
     teardown = () => {
@@ -101,7 +143,12 @@ export class RoomHandle {
         this.net = null;
         this.mesh?.stop();
         this.mesh = null;
+        if (this.heartbeat !== null) {
+            clearInterval(this.heartbeat);
+            this.heartbeat = null;
+        }
         if (this.unloadHandler && typeof window !== 'undefined') {
+            window.removeEventListener('pagehide', this.unloadHandler);
             window.removeEventListener('beforeunload', this.unloadHandler);
             this.unloadHandler = null;
         }

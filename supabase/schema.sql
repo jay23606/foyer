@@ -48,8 +48,17 @@ create table if not exists public.foyer_room_players (
 	-- Per-player app state: a colour, a team, a download percentage. Yours.
 	state     jsonb not null default '{}'::jsonb,
 	joined_at timestamptz not null default now(),
+	-- Liveness. A tab that closes without saying so stops bumping this, which
+	-- is what lets the reaper below tell a quiet player from a departed one.
+	last_seen timestamptz not null default now(),
 	primary key (room_id, player_id)
 );
+-- Deployments that predate last_seen still need it, and `create table if not
+-- exists` above will not add it to a table that already exists.
+alter table public.foyer_room_players
+	add column if not exists last_seen timestamptz not null default now();
+create index if not exists foyer_room_players_last_seen_idx
+	on public.foyer_room_players (last_seen);
 
 -- -------------------------------------------------------------------- bans
 -- A ban is enforced by the rejoin policy below rather than by asking the
@@ -174,7 +183,8 @@ end $$;
 
 -- ------------------------------------------------------------------ reaping
 -- Rooms outlive the tabs that made them: a closed laptop sends no goodbye.
--- Close any room whose last player has gone, and sweep anything stale.
+-- Two halves. The trigger handles players who leave and say so; foyer_reap_rooms
+-- below handles the ones who do not, which is most of them.
 create or replace function public.foyer_close_empty_room()
 returns trigger language plpgsql security definer as $$
 begin
@@ -191,6 +201,38 @@ drop trigger if exists foyer_close_empty_room on public.foyer_room_players;
 create trigger foyer_close_empty_room
 	after delete on public.foyer_room_players
 	for each row execute function public.foyer_close_empty_room();
+
+/**
+ * The sweep the trigger above cannot do.
+ *
+ * The trigger only fires on a delete, so it closes a room when someone leaves
+ * and says so. Nobody says so when a laptop lid shuts, a phone is swiped away
+ * or a tab is killed -- the row stays, the room looks occupied, and no delete
+ * ever arrives to trigger anything. This is that missing half.
+ *
+ * Deleting the stale rows rather than closing the rooms directly is what keeps
+ * the two halves consistent: the delete fires the trigger, and rooms close
+ * through exactly one code path however their players left.
+ *
+ * security definer because it deletes other people's rows on purpose, which is
+ * precisely what the leave-or-kick policy exists to forbid.
+ */
+create or replace function public.foyer_reap_rooms(stale_seconds integer default 90)
+returns void language plpgsql security definer as $$
+begin
+	delete from public.foyer_room_players
+	where last_seen < now() - make_interval(secs => stale_seconds);
+
+	-- Rooms emptied before last_seen existed, or by a cascade, never saw the
+	-- trigger. Cheap to check and it costs one statement.
+	update public.foyer_rooms r set is_open = false, updated_at = now()
+	where r.is_open
+		and not exists (
+			select 1 from public.foyer_room_players p where p.room_id = r.id
+		);
+end $$;
+
+grant execute on function public.foyer_reap_rooms(integer) to anon, authenticated;
 
 -- ------------------------------------------------------------------- queue
 -- Random pairing, for apps that meet strangers rather than book rooms.

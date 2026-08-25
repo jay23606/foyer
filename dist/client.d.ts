@@ -18,6 +18,7 @@ export type FoyerContext = {
     audioConstraints: MediaTrackConstraints | undefined;
     hostMigration: boolean;
     reconnectAttempts: number;
+    heartbeatMs: number;
 };
 export declare class Foyer {
     private readonly supabase;
@@ -31,6 +32,8 @@ export declare class Foyer {
     private readonly audio;
     private readonly migrate;
     private readonly retries;
+    private readonly heartbeatMs;
+    private readonly staleSeconds;
     private current;
     constructor(options: FoyerOptions);
     /** The signed-in player, or null. */

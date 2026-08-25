@@ -27,6 +27,8 @@ export declare class RoomHandle<TMeta = Record<string, unknown>> {
     private channel;
     private listeners;
     private unloadHandler;
+    private heartbeat;
+    private accessToken;
     private net;
     private mesh;
     constructor(ctx: FoyerContext, room: Room<TMeta>);
@@ -47,8 +49,23 @@ export declare class RoomHandle<TMeta = Record<string, unknown>> {
     join: () => Promise<void>;
     leave: () => Promise<void>;
     /**
-     * A closing tab sends no goodbye, so the row would linger and the room
-     * would look occupied. keepalive lets the request outlive the page.
+     * Says goodbye when the tab goes away, and proves we are still here while
+     * it has not.
+     *
+     * Three mechanisms, each covering the way the one before it fails:
+     *
+     *  - `leave()` is the clean path, and the only one that always works.
+     *  - The unload beacon catches a closing tab. Best effort by nature --
+     *    browsers are entitled to skip these handlers entirely.
+     *  - The heartbeat is what lets the database work it out unaided. Stop
+     *    bumping last_seen and foyer_reap_rooms deletes the row, firing the
+     *    same trigger a clean leave would have.
+     *
+     * The beacon must carry the *user's* token rather than the anon key. The
+     * delete policy is `auth.uid() = player_id`, so an anon request matches no
+     * rows and PostgREST answers 204 regardless -- a silent no-op indis-
+     * tinguishable from success. The token is cached because an unload handler
+     * cannot await getSession.
      */
     private watchUnload;
     private teardown;

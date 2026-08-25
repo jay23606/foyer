@@ -147,6 +147,30 @@ project. Change it in the schema and pass the same value to `createFoyer`.
 The anon key is public by design — row-level security is what protects the
 data. The service role key must never reach the browser.
 
+`schema.sql` is written to be re-runnable, so upgrading foyer means running it
+again. Doing so is how you pick up the `last_seen` column and `foyer_reap_rooms`
+that empty-room cleanup depends on (see below); a client that has them and a
+database that does not will run fine and simply never close a room by itself.
+
+### How a room closes
+
+Harder than it sounds, because most players never say goodbye. Three mechanisms,
+each covering the way the one before it fails:
+
+- **`leave()`** deletes the player's row, and a trigger closes the room when the
+  last row goes. Clean, and the only one that always works.
+- **An unload beacon** catches a closing tab, on `pagehide` as well as
+  `beforeunload` — mobile browsers frequently skip the latter, and a phone
+  swiped away from the app is exactly the case that needs covering. Best effort:
+  browsers may skip these handlers entirely.
+- **A heartbeat and a reaper**, which is what lets the database work it out
+  unaided. Each tab bumps `last_seen`; `foyer_reap_rooms` deletes rows that have
+  stopped, firing the same trigger a clean leave would have. `listRooms()` calls
+  it, so a dead room is swept when somebody looks at the lobby.
+
+Rooms close through exactly one code path however their players left, which is
+why the reaper deletes stale rows rather than closing rooms directly.
+
 ## Options
 
 Sensible defaults, adjustable where an app might reasonably differ.
@@ -162,7 +186,13 @@ Sensible defaults, adjustable where an app might reasonably differ.
 | `audioConstraints` | echo cancellation on | sending music rather than speech |
 | `hostMigration` | `false` | a room that should outlive its host |
 | `reconnectAttempts` | `3` | rebuild a failed connection, or do not |
+| `heartbeatMs` | `30_000` | how often a tab proves it is still in the room |
+| `staleSeconds` | `90` | how long a silent seat is held before it is reaped |
 | `url`, `anonKey` | read off the client | avoid undocumented fields |
+
+`staleSeconds` is raised to twice `heartbeatMs` if you set it lower, because a
+staleness window shorter than the heartbeat evicts players who are sitting
+right there — and "people randomly dropping out" looks nothing like its cause.
 
 Per call rather than per client: `topology` on `connect`, `tag`, `timeoutMs`
 and `signal` on `queue`, `channel` reliability on `connect`, `maxPlayers` on a

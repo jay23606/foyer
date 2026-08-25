@@ -483,6 +483,9 @@ export const createMediaMesh = (options) => {
         table: (name) => name,
         iceServers: options.iceServers ?? [{ urls: 'stun:stun.l.google.com:19302' }],
         rest: null,
+        // Never read here: the heartbeat keeps a room_players row alive, and a
+        // standalone mesh has neither a room nor a row.
+        heartbeatMs: 0,
         videoQuality: options.videoQuality ?? null,
         graceMs: options.peerGraceMs ?? 0,
         audioConstraints: options.audioConstraints,

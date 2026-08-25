@@ -137,6 +137,24 @@ export type FoyerOptions = {
      */
     hostMigration?: boolean;
     /**
+     * How often to prove this tab is still in the room.
+     *
+     * A room closes when its last player's row goes. Leaving cleanly deletes
+     * that row, but a closed lid, a swiped-away phone and a killed tab all
+     * leave it behind, so the row also carries a timestamp this refreshes and
+     * the reaper watches. Must stay comfortably under the staleness window --
+     * beat slower than the reaper sweeps and live players get evicted.
+     */
+    heartbeatMs?: number;
+    /**
+     * How long a player's row survives without a heartbeat.
+     *
+     * The gap between this and heartbeatMs is the tolerance for a phone that
+     * loses signal in a lift. Short evicts people who were coming back; long
+     * leaves dead rooms in the lobby. The default forgives two missed beats.
+     */
+    staleSeconds?: number;
+    /**
      * How many times to rebuild a peer connection that fails.
      *
      * ICE gives up for reasons that do not last -- a network changing hands, a

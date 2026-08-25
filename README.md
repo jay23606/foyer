@@ -97,7 +97,14 @@ a stream by its audience: two people can afford a decent picture, sixteen
 cannot. The default lands around a megabit up at any room size. Replace the
 whole curve if that is wrong for your app:
 
-
+```js
+createFoyer({
+  supabase,
+  videoQuality: peers => peers <= 2
+    ? { maxBitrate: 1_200_000, scaleResolutionDownBy: 1 }  // a call, make it look good
+    : { maxBitrate: 100_000, scaleResolutionDownBy: 4 },   // a wall of thumbnails
+})
+```
 
 Muting and camera toggles flip `track.enabled` rather than adding or removing
 tracks, because changing tracks on a live connection triggers renegotiation:

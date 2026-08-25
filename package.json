@@ -21,7 +21,7 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "prepare": "npm run build",
-    "test": "npm run build && node --test test/*.test.js",
+    "test": "npm run build && node --test",
     "prepublishOnly": "npm run test"
   },
   "peerDependencies": {

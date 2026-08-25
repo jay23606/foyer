@@ -82,10 +82,21 @@ data. The service role key must never reach the browser.
 
 ## Status
 
-Early. The schema, identity and lobby layers are implemented. Peer connections
-and the voice mesh are next; both exist in working form in
-[netquake](https://github.com/jay23606/netquake), which is where this library
-was extracted from after building the same thing eleven times.
+Extracted from [netquake](https://github.com/jay23606/netquake) after building
+the same peer-to-peer plumbing there a fourth time, and netquake is its first
+consumer: its lobby, chat, moderation, identity and voice all run on this in
+production.
+
+Verified in use: sign-in, a live room list across sessions, joining, rosters,
+chat, host-only settings, synchronised launch, and the voice mesh.
+
+`PeerNet` -- the data-channel layer with the star/mesh choice -- is the one
+part with no consumer yet. netquake keeps its own broker there, because its
+engine owns peer connections through its own interface and wants only the
+offers and candidates. So that code is written and typed but unproven, and
+should be treated accordingly.
+
+There are no tests.
 
 No TURN server, so peers behind symmetric NAT will not connect. Pass your own
 `iceServers` if that matters to you.

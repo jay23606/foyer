@@ -35,6 +35,9 @@ export declare class RoomHandle<TMeta = Record<string, unknown>> {
     get status(): string;
     get metadata(): TMeta;
     get hostId(): string;
+    get maxPlayers(): number;
+    get isOpen(): boolean;
+    get createdAt(): string;
     get players(): RoomPlayer[];
     get isHost(): boolean;
     on: <K extends keyof Events>(event: K, listener: Listener<K>) => Unsubscribe;

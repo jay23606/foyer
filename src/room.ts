@@ -44,6 +44,9 @@ export class RoomHandle<TMeta = Record<string, unknown>> {
 	get status(): string { return this.data.status }
 	get metadata(): TMeta { return this.data.metadata }
 	get hostId(): string { return this.data.hostId }
+	get maxPlayers(): number { return this.data.maxPlayers }
+	get isOpen(): boolean { return this.data.isOpen }
+	get createdAt(): string { return this.data.createdAt }
 	get players(): RoomPlayer[] { return this.roster }
 	get isHost(): boolean { return this.ctx.requirePlayer().id === this.data.hostId }
 

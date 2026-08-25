@@ -28,6 +28,9 @@ export class RoomHandle {
     get status() { return this.data.status; }
     get metadata() { return this.data.metadata; }
     get hostId() { return this.data.hostId; }
+    get maxPlayers() { return this.data.maxPlayers; }
+    get isOpen() { return this.data.isOpen; }
+    get createdAt() { return this.data.createdAt; }
     get players() { return this.roster; }
     get isHost() { return this.ctx.requirePlayer().id === this.data.hostId; }
     on = (event, listener) => {

@@ -1,6 +1,8 @@
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import type { FoyerContext } from './client.js'
 import type { Message, Room, RoomPlayer, Unsubscribe } from './types.js'
+import { PeerNet, type PeerOptions } from './net.js'
+import { VoiceMesh } from './voice.js'
 
 type Events = {
 	players: RoomPlayer[]
@@ -28,6 +30,8 @@ export class RoomHandle<TMeta = Record<string, unknown>> {
 	private channel: RealtimeChannel | null = null
 	private listeners = new Map<keyof Events, Set<Listener<never>>>()
 	private unloadHandler: (() => void) | null = null
+	private net: PeerNet | null = null
+	private mesh: VoiceMesh | null = null
 
 	constructor(ctx: FoyerContext, room: Room<TMeta>) {
 		this.ctx = ctx
@@ -114,6 +118,10 @@ export class RoomHandle<TMeta = Record<string, unknown>> {
 	}
 
 	private teardown = (): void => {
+		this.net?.close()
+		this.net = null
+		this.mesh?.stop()
+		this.mesh = null
 		if (this.unloadHandler && typeof window !== 'undefined') {
 			window.removeEventListener('beforeunload', this.unloadHandler)
 			this.unloadHandler = null
@@ -251,5 +259,33 @@ export class RoomHandle<TMeta = Record<string, unknown>> {
 		await this.ctx.supabase
 			.from(this.ctx.table('bans'))
 			.delete().eq('room_id', this.id).eq('player_id', playerId)
+	}
+
+	// ----------------------------------------------------------------- peers
+
+	/**
+	 * Opens peer connections for this room.
+	 *
+	 * Separate from the room on purpose: an app that only wants a lobby never
+	 * opens a peer connection, and one that wants both keeps them independent.
+	 * You must choose a topology -- see the note on `Topology` for why that is
+	 * not defaulted.
+	 */
+	connect = async (options: PeerOptions): Promise<PeerNet> => {
+		this.net?.close()
+		this.net = new PeerNet(this.ctx, this.id, this.data.hostId, options)
+		await this.net.connect()
+		return this.net
+	}
+
+	/**
+	 * The voice mesh for this room, created on first use.
+	 *
+	 * Nothing happens until you call `start()`, which must come from a user
+	 * gesture. Always a mesh and always its own connections -- see voice.ts.
+	 */
+	voice = (): VoiceMesh => {
+		this.mesh ??= new VoiceMesh(this.ctx, this.id)
+		return this.mesh
 	}
 }

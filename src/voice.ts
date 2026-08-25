@@ -213,6 +213,50 @@ export class VoiceMesh {
 		}
 	}
 
+	/**
+	 * Video quality, chosen from how many people are watching.
+	 *
+	 * A mesh makes every sender upload one copy per peer, so the cost of a
+	 * stream is multiplied by the audience. Fixed quality therefore has no
+	 * good setting: whatever looks right for two people is ruinous for
+	 * sixteen, and whatever survives sixteen looks needlessly poor for two.
+	 *
+	 * So it is not fixed. Two people get a decent picture; a crowd gets small
+	 * tiles, which is all a crowd of tiles can show anyway. Roughly a megabit
+	 * up either way, which is the number that actually has to hold.
+	 */
+	private qualityFor = (peers: number): { maxBitrate: number, scaleDown: number } => {
+		if (peers <= 1) return { maxBitrate: 600_000, scaleDown: 1 }
+		if (peers <= 3) return { maxBitrate: 300_000, scaleDown: 1.5 }
+		if (peers <= 7) return { maxBitrate: 150_000, scaleDown: 2 }
+		return { maxBitrate: 80_000, scaleDown: 4 }
+	}
+
+	/**
+	 * Applied through the sender's parameters rather than by touching the
+	 * track, so the encoder changes its mind mid-call without a fresh offer
+	 * and answer. Runs whenever the peer count moves.
+	 */
+	private applyVideoQuality = async (): Promise<void> => {
+		if (this.audioOnly) return
+		const { maxBitrate, scaleDown } = this.qualityFor(this.connections.size)
+		for (const senders of this.videoSenders.values()) {
+			for (const sender of senders) {
+				try {
+					const params = sender.getParameters()
+					// Firefox has been known to hand back no encodings at all
+					// before the first negotiation settles.
+					if (!params.encodings || params.encodings.length === 0) {
+						params.encodings = [{}]
+					}
+					params.encodings[0]!.maxBitrate = maxBitrate
+					params.encodings[0]!.scaleResolutionDownBy = scaleDown
+					await sender.setParameters(params)
+				} catch { /* sender closed, or the browser refused the shape */ }
+			}
+		}
+	}
+
 	private applyMute = (): void => {
 		this.stream?.getAudioTracks().forEach(t => { t.enabled = !this.mutedFlag })
 	}
@@ -296,6 +340,9 @@ export class VoiceMesh {
 		})
 		pc.addEventListener('connectionstatechange', () => {
 			if (pc.connectionState === 'failed' || pc.connectionState === 'closed') this.drop(peerId)
+			// Parameters only stick once the sender is negotiated, so the
+			// quality is set here rather than the moment the track is added.
+			if (pc.connectionState === 'connected') void this.applyVideoQuality()
 		})
 		return pc
 	}
@@ -382,7 +429,11 @@ export class VoiceMesh {
 		this.pendingIce.delete(peerId)
 		this.videoSenders.delete(peerId)
 		this.dropAudio(peerId)
-		if (had) this.leaveListeners.forEach(l => l(peerId))
+		if (had) {
+			this.leaveListeners.forEach(l => l(peerId))
+			// A smaller audience means the remaining senders can afford more.
+			void this.applyVideoQuality()
+		}
 	}
 }
 

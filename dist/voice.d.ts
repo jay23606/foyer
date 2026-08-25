@@ -60,6 +60,25 @@ export declare class VoiceMesh {
      */
     setVideoSending: (sending: boolean) => void;
     private applyVideoSending;
+    /**
+     * Video quality, chosen from how many people are watching.
+     *
+     * A mesh makes every sender upload one copy per peer, so the cost of a
+     * stream is multiplied by the audience. Fixed quality therefore has no
+     * good setting: whatever looks right for two people is ruinous for
+     * sixteen, and whatever survives sixteen looks needlessly poor for two.
+     *
+     * So it is not fixed. Two people get a decent picture; a crowd gets small
+     * tiles, which is all a crowd of tiles can show anyway. Roughly a megabit
+     * up either way, which is the number that actually has to hold.
+     */
+    private qualityFor;
+    /**
+     * Applied through the sender's parameters rather than by touching the
+     * track, so the encoder changes its mind mid-call without a fresh offer
+     * and answer. Runs whenever the peer count moves.
+     */
+    private applyVideoQuality;
     private applyMute;
     private stopTracks;
     private openChannel;

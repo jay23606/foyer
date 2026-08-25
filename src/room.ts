@@ -1,0 +1,255 @@
+import type { RealtimeChannel } from '@supabase/supabase-js'
+import type { FoyerContext } from './client.js'
+import type { Message, Room, RoomPlayer, Unsubscribe } from './types.js'
+
+type Events = {
+	players: RoomPlayer[]
+	metadata: unknown
+	status: string
+	message: Message
+	closed: void
+}
+
+type Listener<K extends keyof Events> = (payload: Events[K]) => void
+
+/**
+ * A room you are in.
+ *
+ * Everything here is a lobby concern: who is present, what the settings are,
+ * what has been said, and who is no longer welcome. Peer connections and voice
+ * are separate, deliberately -- they attach to a room rather than being part
+ * of it, so an app that only wants a lobby never opens a peer connection, and
+ * a failure in one cannot disturb the other.
+ */
+export class RoomHandle<TMeta = Record<string, unknown>> {
+	private readonly ctx: FoyerContext
+	private data: Room<TMeta>
+	private roster: RoomPlayer[] = []
+	private channel: RealtimeChannel | null = null
+	private listeners = new Map<keyof Events, Set<Listener<never>>>()
+	private unloadHandler: (() => void) | null = null
+
+	constructor(ctx: FoyerContext, room: Room<TMeta>) {
+		this.ctx = ctx
+		this.data = room
+	}
+
+	get id(): string { return this.data.id }
+	get code(): string { return this.data.code }
+	get name(): string { return this.data.name }
+	get status(): string { return this.data.status }
+	get metadata(): TMeta { return this.data.metadata }
+	get hostId(): string { return this.data.hostId }
+	get players(): RoomPlayer[] { return this.roster }
+	get isHost(): boolean { return this.ctx.requirePlayer().id === this.data.hostId }
+
+	on = <K extends keyof Events>(event: K, listener: Listener<K>): Unsubscribe => {
+		const set = this.listeners.get(event) ?? new Set()
+		set.add(listener as Listener<never>)
+		this.listeners.set(event, set)
+		return () => { set.delete(listener as Listener<never>) }
+	}
+
+	private emit = <K extends keyof Events>(event: K, payload: Events[K]): void => {
+		this.listeners.get(event)?.forEach(l => (l as Listener<K>)(payload))
+	}
+
+	// ------------------------------------------------------------- lifecycle
+
+	/** Called by the client on create/join; you do not normally call this. */
+	join = async (): Promise<void> => {
+		const player = this.ctx.requirePlayer()
+
+		// A banned player's insert is refused by the policy, not by us asking
+		// politely -- so a rejection here is the ban working, not a bug.
+		const { error } = await this.ctx.supabase
+			.from(this.ctx.table('room_players'))
+			.upsert(
+				{
+					room_id: this.id,
+					player_id: player.id,
+					is_host: player.id === this.data.hostId,
+				},
+				{ onConflict: 'room_id,player_id', ignoreDuplicates: true }
+			)
+		if (error) throw new Error(`foyer: could not join (${error.message})`)
+
+		await this.refreshPlayers()
+		this.subscribe()
+		this.watchUnload()
+		await this.say(`${player.name} joined`, true)
+	}
+
+	leave = async (): Promise<void> => {
+		const player = this.ctx.requirePlayer()
+		await this.say(`${player.name} left`, true)
+		this.teardown()
+		await this.ctx.supabase
+			.from(this.ctx.table('room_players'))
+			.delete()
+			.eq('room_id', this.id)
+			.eq('player_id', player.id)
+	}
+
+	/**
+	 * A closing tab sends no goodbye, so the row would linger and the room
+	 * would look occupied. keepalive lets the request outlive the page.
+	 */
+	private watchUnload = (): void => {
+		if (typeof window === 'undefined') return
+		const player = this.ctx.requirePlayer()
+		this.unloadHandler = () => {
+			const url = `${(this.ctx.supabase as any).supabaseUrl}/rest/v1/${this.ctx.table('room_players')}`
+				+ `?room_id=eq.${this.id}&player_id=eq.${player.id}`
+			void fetch(url, {
+				method: 'DELETE',
+				keepalive: true,
+				headers: {
+					apikey: (this.ctx.supabase as any).supabaseKey,
+					Authorization: `Bearer ${(this.ctx.supabase as any).supabaseKey}`,
+				},
+			}).catch(() => { /* the reaper will get it */ })
+		}
+		window.addEventListener('beforeunload', this.unloadHandler)
+	}
+
+	private teardown = (): void => {
+		if (this.unloadHandler && typeof window !== 'undefined') {
+			window.removeEventListener('beforeunload', this.unloadHandler)
+			this.unloadHandler = null
+		}
+		if (this.channel) {
+			void this.ctx.supabase.removeChannel(this.channel)
+			this.channel = null
+		}
+	}
+
+	// -------------------------------------------------------------- presence
+
+	private refreshPlayers = async (): Promise<void> => {
+		const { data, error } = await this.ctx.supabase
+			.from(this.ctx.table('room_players'))
+			.select(`player_id, is_host, state, joined_at, profile:${this.ctx.table('profiles')}(name)`)
+			.eq('room_id', this.id)
+			.order('joined_at')
+		if (error) return
+
+		this.roster = (data ?? []).map((row: any) => ({
+			id: row.player_id,
+			name: row.profile?.name ?? 'unknown',
+			isHost: row.is_host,
+			state: row.state ?? {},
+			joinedAt: row.joined_at,
+		}))
+		this.emit('players', this.roster)
+	}
+
+	private subscribe = (): void => {
+		this.channel = this.ctx.supabase
+			.channel(`foyer:room:${this.id}`)
+			.on('postgres_changes',
+				{ event: '*', schema: 'public', table: this.ctx.table('room_players'), filter: `room_id=eq.${this.id}` },
+				() => { void this.refreshPlayers() })
+			.on('postgres_changes',
+				{ event: 'UPDATE', schema: 'public', table: this.ctx.table('rooms'), filter: `id=eq.${this.id}` },
+				({ new: row }: any) => {
+					const wasOpen = this.data.isOpen
+					this.data = { ...this.data, metadata: row.metadata, status: row.status, isOpen: row.is_open }
+					this.emit('metadata', row.metadata)
+					this.emit('status', row.status)
+					if (wasOpen && !row.is_open) this.emit('closed', undefined)
+				})
+			.on('postgres_changes',
+				{ event: 'INSERT', schema: 'public', table: this.ctx.table('messages'), filter: `room_id=eq.${this.id}` },
+				({ new: row }: any) => {
+					this.emit('message', {
+						id: row.id,
+						playerId: row.player_id,
+						playerName: this.roster.find(p => p.id === row.player_id)?.name ?? 'unknown',
+						body: row.body,
+						system: row.system,
+						createdAt: row.created_at,
+					})
+				})
+			.subscribe()
+	}
+
+	// --------------------------------------------------------------- writing
+
+	/** Host only; the database enforces it. */
+	update = async (patch: Partial<{ metadata: TMeta, status: string, name: string, isOpen: boolean }>): Promise<void> => {
+		const row: Record<string, unknown> = { updated_at: new Date().toISOString() }
+		if (patch.metadata !== undefined) row.metadata = patch.metadata
+		if (patch.status !== undefined) row.status = patch.status
+		if (patch.name !== undefined) row.name = patch.name
+		if (patch.isOpen !== undefined) row.is_open = patch.isOpen
+
+		const { error } = await this.ctx.supabase
+			.from(this.ctx.table('rooms')).update(row).eq('id', this.id)
+		if (error) throw new Error(`foyer: could not update room (${error.message})`)
+	}
+
+	/** Your own per-player blob: a colour, a team, a download percentage. */
+	setPlayerState = async (state: Record<string, unknown>): Promise<void> => {
+		const player = this.ctx.requirePlayer()
+		await this.ctx.supabase
+			.from(this.ctx.table('room_players'))
+			.update({ state })
+			.eq('room_id', this.id)
+			.eq('player_id', player.id)
+	}
+
+	say = async (body: string, system = false): Promise<void> => {
+		const player = this.ctx.requirePlayer()
+		const text = body.trim().slice(0, 500)
+		if (!text) return
+		await this.ctx.supabase.from(this.ctx.table('messages')).insert({
+			room_id: this.id, player_id: player.id, body: text, system,
+		})
+	}
+
+	history = async (limit = 100): Promise<Message[]> => {
+		const { data } = await this.ctx.supabase
+			.from(this.ctx.table('messages'))
+			.select(`id, player_id, body, system, created_at, profile:${this.ctx.table('profiles')}(name)`)
+			.eq('room_id', this.id)
+			.order('created_at', { ascending: true })
+			.limit(limit)
+		return (data ?? []).map((row: any) => ({
+			id: row.id,
+			playerId: row.player_id,
+			playerName: row.profile?.name ?? 'unknown',
+			body: row.body,
+			system: row.system,
+			createdAt: row.created_at,
+		}))
+	}
+
+	// ------------------------------------------------------------ moderation
+
+	/** Removes a player. They may rejoin; use ban if they should not. */
+	kick = async (playerId: string): Promise<void> => {
+		await this.ctx.supabase
+			.from(this.ctx.table('room_players'))
+			.delete().eq('room_id', this.id).eq('player_id', playerId)
+	}
+
+	/**
+	 * Removes a player and refuses the rejoin at the database.
+	 *
+	 * This is the reason foyer needs Postgres rather than only a data channel:
+	 * a ban a client can ignore is not a ban.
+	 */
+	ban = async (playerId: string): Promise<void> => {
+		await this.ctx.supabase
+			.from(this.ctx.table('bans'))
+			.upsert({ room_id: this.id, player_id: playerId }, { onConflict: 'room_id,player_id' })
+		await this.kick(playerId)
+	}
+
+	unban = async (playerId: string): Promise<void> => {
+		await this.ctx.supabase
+			.from(this.ctx.table('bans'))
+			.delete().eq('room_id', this.id).eq('player_id', playerId)
+	}
+}

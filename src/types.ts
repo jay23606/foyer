@@ -1,0 +1,86 @@
+import type { SupabaseClient } from '@supabase/supabase-js'
+
+/**
+ * A player. `name` is a display name, not an identity: two players may share
+ * one, and a player may change theirs. `id` is the identity, and it is the
+ * Supabase auth user id, so row-level security can reason about it.
+ */
+export type Player = {
+	id: string
+	name: string
+}
+
+/** A player as seen inside a room, with whatever state your app hung on them. */
+export type RoomPlayer<TState = Record<string, unknown>> = Player & {
+	isHost: boolean
+	state: TState
+	joinedAt: string
+}
+
+/**
+ * A room. `metadata` is yours: foyer stores it, broadcasts changes to it, and
+ * lets only the host write it, but never reads it. A map name, a time control,
+ * a difficulty -- all metadata.
+ */
+export type Room<TMeta = Record<string, unknown>> = {
+	id: string
+	code: string
+	name: string
+	hostId: string
+	maxPlayers: number
+	metadata: TMeta
+	status: string
+	isOpen: boolean
+	playerCount: number
+	hostName: string
+	createdAt: string
+}
+
+export type Message = {
+	id: number
+	playerId: string | null
+	playerName: string
+	body: string
+	/** A join/leave notice rather than something a player typed. */
+	system: boolean
+	createdAt: string
+}
+
+/**
+ * How peers are wired to each other.
+ *
+ * This is the choice that quietly ruins multiplayer apps, so foyer makes you
+ * state it.
+ *
+ * - `star` -- everyone connects to the host and nobody else. Correct when one
+ *   peer is authoritative, as in a client/server game where the host *is* the
+ *   server. Cheap: n-1 connections.
+ * - `mesh` -- everyone connects to everyone. Correct when peers must reach
+ *   each other directly, as in voice chat, where a star means everyone hears
+ *   the host and nobody hears anyone else. Costs n(n-1)/2 connections.
+ *
+ * Picking the wrong one produces a system that connects perfectly and is
+ * subtly useless, which is much harder to debug than a system that fails.
+ */
+export type Topology = 'star' | 'mesh'
+
+export type FoyerOptions = {
+	supabase: SupabaseClient
+	/**
+	 * Table prefix, so several apps can share one Supabase project. Must match
+	 * the prefix in schema.sql.
+	 */
+	prefix?: string
+	/** Defaults to a public STUN server. No TURN: peers behind symmetric NAT will not connect. */
+	iceServers?: RTCIceServer[]
+}
+
+export type CreateRoomOptions<TMeta> = {
+	name?: string
+	metadata?: TMeta
+	maxPlayers?: number
+	status?: string
+}
+
+/** Unsubscribes a live subscription. Safe to call twice. */
+export type Unsubscribe = () => void

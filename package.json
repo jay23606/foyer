@@ -1,0 +1,20 @@
+{
+  "name": "@jay23606/foyer",
+  "version": "0.1.0",
+  "description": "Peer-to-peer rooms for Supabase. Lobbies, presence, chat, moderation and voice, with no server.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
+  "files": ["dist", "supabase"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "peerDependencies": { "@supabase/supabase-js": "^2.0.0" },
+  "devDependencies": { "@supabase/supabase-js": "^2.45.0", "typescript": "^5.6.0" },
+  "keywords": ["webrtc", "p2p", "supabase", "multiplayer", "lobby", "presence"],
+  "license": "MIT",
+  "repository": { "type": "git", "url": "git+https://github.com/jay23606/foyer.git" },
+  "engines": { "node": ">=20" }
+}

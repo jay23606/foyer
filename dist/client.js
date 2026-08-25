@@ -8,6 +8,7 @@ export class Foyer {
     prefix;
     ice;
     rest;
+    quality;
     current = null;
     constructor(options) {
         this.supabase = options.supabase;
@@ -20,6 +21,7 @@ export class Foyer {
         const url = options.url ?? loose.supabaseUrl;
         const key = options.anonKey ?? loose.supabaseKey;
         this.rest = url && key ? { url, key } : null;
+        this.quality = options.videoQuality ?? null;
     }
     /** The signed-in player, or null. */
     get player() { return this.current; }
@@ -29,6 +31,7 @@ export class Foyer {
         table: this.table,
         iceServers: this.ice,
         rest: this.rest,
+        videoQuality: this.quality,
         requirePlayer: () => {
             if (!this.current)
                 throw new Error('foyer: not signed in');

@@ -58,6 +58,17 @@ export type Message = {
  * subtly useless, which is much harder to debug than a system that fails.
  */
 export type Topology = 'star' | 'mesh';
+/**
+ * What a sender should aim for, given how many peers are receiving.
+ *
+ * `scaleResolutionDownBy` of 2 halves each dimension, so a quarter of the
+ * pixels. Both are applied through the sender's parameters, which take effect
+ * without renegotiating.
+ */
+export type VideoQuality = {
+    maxBitrate: number;
+    scaleResolutionDownBy: number;
+};
 export type FoyerOptions = {
     supabase: SupabaseClient;
     /**
@@ -78,6 +89,16 @@ export type FoyerOptions = {
      */
     url?: string;
     anonKey?: string;
+    /**
+     * Video quality as a function of how many peers are receiving.
+     *
+     * A mesh multiplies a stream by its audience, so quality cannot sensibly be
+     * fixed. The default trades resolution for headcount and lands around a
+     * megabit up whatever the room size, which suits small tiles. An app that
+     * wants something else -- a two-person call that should look good, a wall
+     * of thumbnails that need not -- replaces the whole curve.
+     */
+    videoQuality?: (peers: number) => VideoQuality;
 };
 export type CreateRoomOptions<TMeta> = {
     name?: string;

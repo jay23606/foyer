@@ -92,6 +92,13 @@ asked for voice should not have to render anything. A mesh carrying **video**
 does not, because only the app knows where a picture goes — so remote media
 arrives through `onStream` and you place it.
 
+Quality is chosen from how many peers are receiving, because a mesh multiplies
+a stream by its audience: two people can afford a decent picture, sixteen
+cannot. The default lands around a megabit up at any room size. Replace the
+whole curve if that is wrong for your app:
+
+
+
 Muting and camera toggles flip `track.enabled` rather than adding or removing
 tracks, because changing tracks on a live connection triggers renegotiation:
 a fresh offer and answer in the middle of a call.

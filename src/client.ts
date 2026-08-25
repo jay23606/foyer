@@ -5,6 +5,7 @@ import type {
 	Player,
 	Room,
 	Unsubscribe,
+	VideoQuality,
 } from './types.js'
 import { RoomHandle } from './room.js'
 import { makeCode } from './codes.js'
@@ -21,6 +22,7 @@ export type FoyerContext = {
 	requirePlayer: () => Player
 	/** Resolved once: options first, the client's own fields only as a fallback. */
 	rest: { url: string, key: string } | null
+	videoQuality: ((peers: number) => VideoQuality) | null
 }
 
 export class Foyer {
@@ -28,6 +30,7 @@ export class Foyer {
 	private readonly prefix: string
 	private readonly ice: RTCIceServer[]
 	private readonly rest: { url: string, key: string } | null
+	private readonly quality: ((peers: number) => VideoQuality) | null
 	private current: Player | null = null
 
 	constructor(options: FoyerOptions) {
@@ -42,6 +45,7 @@ export class Foyer {
 		const url = options.url ?? loose.supabaseUrl
 		const key = options.anonKey ?? loose.supabaseKey
 		this.rest = url && key ? { url, key } : null
+		this.quality = options.videoQuality ?? null
 	}
 
 	/** The signed-in player, or null. */
@@ -54,6 +58,7 @@ export class Foyer {
 		table: this.table,
 		iceServers: this.ice,
 		rest: this.rest,
+		videoQuality: this.quality,
 		requirePlayer: () => {
 			if (!this.current) throw new Error('foyer: not signed in')
 			return this.current

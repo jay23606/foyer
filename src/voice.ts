@@ -1,6 +1,6 @@
 import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js'
 import type { FoyerContext } from './client.js'
-import type { Unsubscribe } from './types.js'
+import type { Unsubscribe, VideoQuality } from './types.js'
 
 // Voice chat.
 //
@@ -225,11 +225,13 @@ export class VoiceMesh {
 	 * tiles, which is all a crowd of tiles can show anyway. Roughly a megabit
 	 * up either way, which is the number that actually has to hold.
 	 */
-	private qualityFor = (peers: number): { maxBitrate: number, scaleDown: number } => {
-		if (peers <= 1) return { maxBitrate: 600_000, scaleDown: 1 }
-		if (peers <= 3) return { maxBitrate: 300_000, scaleDown: 1.5 }
-		if (peers <= 7) return { maxBitrate: 150_000, scaleDown: 2 }
-		return { maxBitrate: 80_000, scaleDown: 4 }
+	private qualityFor = (peers: number): VideoQuality => {
+		const custom = this.ctx.videoQuality
+		if (custom) return custom(peers)
+		if (peers <= 1) return { maxBitrate: 600_000, scaleResolutionDownBy: 1 }
+		if (peers <= 3) return { maxBitrate: 300_000, scaleResolutionDownBy: 1.5 }
+		if (peers <= 7) return { maxBitrate: 150_000, scaleResolutionDownBy: 2 }
+		return { maxBitrate: 80_000, scaleResolutionDownBy: 4 }
 	}
 
 	/**
@@ -239,7 +241,7 @@ export class VoiceMesh {
 	 */
 	private applyVideoQuality = async (): Promise<void> => {
 		if (this.audioOnly) return
-		const { maxBitrate, scaleDown } = this.qualityFor(this.connections.size)
+		const { maxBitrate, scaleResolutionDownBy } = this.qualityFor(this.connections.size)
 		for (const senders of this.videoSenders.values()) {
 			for (const sender of senders) {
 				try {
@@ -250,7 +252,7 @@ export class VoiceMesh {
 						params.encodings = [{}]
 					}
 					params.encodings[0]!.maxBitrate = maxBitrate
-					params.encodings[0]!.scaleResolutionDownBy = scaleDown
+					params.encodings[0]!.scaleResolutionDownBy = scaleResolutionDownBy
 					await sender.setParameters(params)
 				} catch { /* sender closed, or the browser refused the shape */ }
 			}
@@ -444,6 +446,7 @@ export type StandaloneVoiceOptions = {
 	/** This player's id. Must be unique per participant and stable for the call. */
 	playerId: string
 	iceServers?: RTCIceServer[]
+	videoQuality?: (peers: number) => VideoQuality
 }
 
 /**
@@ -462,6 +465,7 @@ export const createVoiceMesh = (options: StandaloneVoiceOptions): VoiceMesh => {
 		table: (name: string) => name,
 		iceServers: options.iceServers ?? [{ urls: 'stun:stun.l.google.com:19302' }],
 		rest: null,
+		videoQuality: options.videoQuality ?? null,
 		requirePlayer: () => player,
 	}
 	return new VoiceMesh(ctx, options.roomId)

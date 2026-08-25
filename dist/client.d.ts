@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { CreateRoomOptions, FoyerOptions, Player, Room, Unsubscribe } from './types.js';
+import type { CreateRoomOptions, FoyerOptions, Player, Room, Unsubscribe, VideoQuality } from './types.js';
 import { RoomHandle } from './room.js';
 import { type QueueOptions, type QueuePeer } from './queue.js';
 /** Internal handle passed to rooms so they inherit configuration. */
@@ -13,12 +13,14 @@ export type FoyerContext = {
         url: string;
         key: string;
     } | null;
+    videoQuality: ((peers: number) => VideoQuality) | null;
 };
 export declare class Foyer {
     private readonly supabase;
     private readonly prefix;
     private readonly ice;
     private readonly rest;
+    private readonly quality;
     private current;
     constructor(options: FoyerOptions);
     /** The signed-in player, or null. */

@@ -194,13 +194,16 @@ export class VoiceMesh {
      * up either way, which is the number that actually has to hold.
      */
     qualityFor = (peers) => {
+        const custom = this.ctx.videoQuality;
+        if (custom)
+            return custom(peers);
         if (peers <= 1)
-            return { maxBitrate: 600_000, scaleDown: 1 };
+            return { maxBitrate: 600_000, scaleResolutionDownBy: 1 };
         if (peers <= 3)
-            return { maxBitrate: 300_000, scaleDown: 1.5 };
+            return { maxBitrate: 300_000, scaleResolutionDownBy: 1.5 };
         if (peers <= 7)
-            return { maxBitrate: 150_000, scaleDown: 2 };
-        return { maxBitrate: 80_000, scaleDown: 4 };
+            return { maxBitrate: 150_000, scaleResolutionDownBy: 2 };
+        return { maxBitrate: 80_000, scaleResolutionDownBy: 4 };
     };
     /**
      * Applied through the sender's parameters rather than by touching the
@@ -210,7 +213,7 @@ export class VoiceMesh {
     applyVideoQuality = async () => {
         if (this.audioOnly)
             return;
-        const { maxBitrate, scaleDown } = this.qualityFor(this.connections.size);
+        const { maxBitrate, scaleResolutionDownBy } = this.qualityFor(this.connections.size);
         for (const senders of this.videoSenders.values()) {
             for (const sender of senders) {
                 try {
@@ -221,7 +224,7 @@ export class VoiceMesh {
                         params.encodings = [{}];
                     }
                     params.encodings[0].maxBitrate = maxBitrate;
-                    params.encodings[0].scaleResolutionDownBy = scaleDown;
+                    params.encodings[0].scaleResolutionDownBy = scaleResolutionDownBy;
                     await sender.setParameters(params);
                 }
                 catch { /* sender closed, or the browser refused the shape */ }
@@ -422,6 +425,7 @@ export const createVoiceMesh = (options) => {
         table: (name) => name,
         iceServers: options.iceServers ?? [{ urls: 'stun:stun.l.google.com:19302' }],
         rest: null,
+        videoQuality: options.videoQuality ?? null,
         requirePlayer: () => player,
     };
     return new VoiceMesh(ctx, options.roomId);

@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { FoyerContext } from './client.js';
-import type { Unsubscribe } from './types.js';
+import type { Unsubscribe, VideoQuality } from './types.js';
 export type VoiceStatus = 'off' | 'starting' | 'live' | 'denied' | 'unavailable';
 export type VoiceListener = (status: VoiceStatus, detail?: string) => void;
 export declare class VoiceMesh {
@@ -98,6 +98,7 @@ export type StandaloneVoiceOptions = {
     /** This player's id. Must be unique per participant and stable for the call. */
     playerId: string;
     iceServers?: RTCIceServer[];
+    videoQuality?: (peers: number) => VideoQuality;
 };
 /**
  * A voice mesh without the rest of foyer.

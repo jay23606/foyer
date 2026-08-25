@@ -19,6 +19,8 @@ export declare class VoiceMesh {
     private mutedFlag;
     private cameraOffFlag;
     private audioOnly;
+    private videoSenders;
+    private videoSending;
     constructor(ctx: FoyerContext, roomId: string);
     get muted(): boolean;
     get currentStatus(): VoiceStatus;
@@ -44,6 +46,20 @@ export declare class VoiceMesh {
     get cameraOff(): boolean;
     setCameraOff: (off: boolean) => void;
     toggleCamera: () => boolean;
+    get sendingVideo(): boolean;
+    /**
+     * Stop or resume sending video, without renegotiating.
+     *
+     * Disabling a track only makes the encoder send black frames; it keeps
+     * paying for a stream nobody wants. Detaching the track from the sender
+     * stops it outright, and replaceTrack is specified not to require a new
+     * offer and answer -- which matters mid-call.
+     *
+     * Audio is untouched. Somebody whose camera is off is usually still
+     * talking.
+     */
+    setVideoSending: (sending: boolean) => void;
+    private applyVideoSending;
     private applyMute;
     private stopTracks;
     private openChannel;

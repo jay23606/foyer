@@ -60,6 +60,10 @@ export class VoiceMesh {
 	// app that asked for voice should not have to render anything. A mesh
 	// carrying video cannot: only the app knows where the picture goes.
 	private audioOnly = true
+	// Senders are kept per peer because replaceTrack is a sender operation:
+	// it is what stops video without a fresh offer and answer.
+	private videoSenders = new Map<string, Set<RTCRtpSender>>()
+	private videoSending = true
 
 	constructor(ctx: FoyerContext, roomId: string) {
 		this.ctx = ctx
@@ -182,6 +186,33 @@ export class VoiceMesh {
 	}
 	toggleCamera = (): boolean => { this.setCameraOff(!this.cameraOffFlag); return this.cameraOffFlag }
 
+	get sendingVideo(): boolean { return this.videoSending }
+
+	/**
+	 * Stop or resume sending video, without renegotiating.
+	 *
+	 * Disabling a track only makes the encoder send black frames; it keeps
+	 * paying for a stream nobody wants. Detaching the track from the sender
+	 * stops it outright, and replaceTrack is specified not to require a new
+	 * offer and answer -- which matters mid-call.
+	 *
+	 * Audio is untouched. Somebody whose camera is off is usually still
+	 * talking.
+	 */
+	setVideoSending = (sending: boolean): void => {
+		this.videoSending = sending
+		this.connections.forEach((_pc, peerId) => { void this.applyVideoSending(peerId) })
+	}
+
+	private applyVideoSending = async (peerId: string): Promise<void> => {
+		const senders = this.videoSenders.get(peerId)
+		if (!senders) return
+		const track = this.videoSending ? (this.stream?.getVideoTracks()[0] ?? null) : null
+		for (const sender of senders) {
+			try { await sender.replaceTrack(track) } catch { /* connection went away */ }
+		}
+	}
+
 	private applyMute = (): void => {
 		this.stream?.getAudioTracks().forEach(t => { t.enabled = !this.mutedFlag })
 	}
@@ -234,7 +265,21 @@ export class VoiceMesh {
 		this.connections.set(peerId, pc)
 
 		const stream = this.stream
-		if (stream) stream.getTracks().forEach(t => { pc.addTrack(t, stream) })
+		if (stream) {
+			stream.getTracks().forEach(t => {
+				const sender = pc.addTrack(t, stream)
+				// Keep the video senders: replaceTrack on them is how sending
+				// stops without renegotiating, and only a sender can do it.
+				if (t.kind === 'video') {
+					const senders = this.videoSenders.get(peerId) ?? new Set()
+					senders.add(sender)
+					this.videoSenders.set(peerId, senders)
+				}
+			})
+			// A peer arriving while we are not meant to be sending must not be
+			// handed a live track just because it connected late.
+			if (!this.videoSending) void this.applyVideoSending(peerId)
+		}
 
 		pc.addEventListener('icecandidate', event => {
 			if (!event.candidate) return
@@ -335,6 +380,7 @@ export class VoiceMesh {
 		const had = this.connections.delete(peerId)
 		pc?.close()
 		this.pendingIce.delete(peerId)
+		this.videoSenders.delete(peerId)
 		this.dropAudio(peerId)
 		if (had) this.leaveListeners.forEach(l => l(peerId))
 	}

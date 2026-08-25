@@ -160,11 +160,24 @@ Sensible defaults, adjustable where an app might reasonably differ.
 | `peerGraceMs` | `0` | tolerate a stumbling connection instead of dropping it |
 | `audioConstraints` | echo cancellation on | sending music rather than speech |
 | `hostMigration` | `false` | a room that should outlive its host |
+| `reconnectAttempts` | `3` | rebuild a failed connection, or do not |
 | `url`, `anonKey` | read off the client | avoid undocumented fields |
 
-Per call rather than per client: `topology` on `connect`, `tag` and
-`timeoutMs` on `queue`, `channel` reliability on `connect`, `maxPlayers` on a
+Per call rather than per client: `topology` on `connect`, `tag`, `timeoutMs`
+and `signal` on `queue`, `channel` reliability on `connect`, `maxPlayers` on a
 room.
+
+A search can be called off, which matters because the alternative is waiting out
+a timeout after someone has already clicked away:
+
+```js
+const stop = new AbortController()
+cancelButton.onclick = () => stop.abort()
+const peer = await foyer.queue({ tag: 'chat', signal: stop.signal })
+```
+
+Aborting withdraws the advertisement too. A waiter still listed is a partner
+somebody else is about to be handed.
 
 Two things are deliberately not adjustable. **Topology has no default**,
 because a wrong guess there produces a system that connects perfectly and is
@@ -193,6 +206,11 @@ What has actually run, and where:
 netquake keeps its own signalling broker rather than using `PeerNet`, because
 its engine owns peer connections through its own interface and wants only the
 offers and candidates.
+
+ICE gives up for reasons that do not last -- a network changing hands, a laptop
+waking -- so a failed connection is rebuilt rather than mourned. Only the side
+that offered retries, because two ends rebuilding at once collide exactly as two
+simultaneous offers do, and each attempt waits longer than the last.
 
 When a host leaves, the room closes by default -- correct for a game whose host
 is also the server, wrong for a conversation. `hostMigration` promotes the

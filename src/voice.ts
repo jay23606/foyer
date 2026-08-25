@@ -458,6 +458,7 @@ export type StandaloneMediaOptions = {
 	videoQuality?: (peers: number) => VideoQuality
 	peerGraceMs?: number
 	audioConstraints?: MediaTrackConstraints
+	reconnectAttempts?: number
 }
 
 /**
@@ -481,6 +482,7 @@ export const createMediaMesh = (options: StandaloneMediaOptions): MediaMesh => {
 		audioConstraints: options.audioConstraints,
 		// A standalone mesh has no room to hand anyone.
 		hostMigration: false,
+		reconnectAttempts: options.reconnectAttempts ?? 3,
 		requirePlayer: () => player,
 	}
 	return new MediaMesh(ctx, options.roomId)

@@ -101,6 +101,7 @@ export type StandaloneMediaOptions = {
     videoQuality?: (peers: number) => VideoQuality;
     peerGraceMs?: number;
     audioConstraints?: MediaTrackConstraints;
+    reconnectAttempts?: number;
 };
 /**
  * A voice mesh without the rest of foyer.

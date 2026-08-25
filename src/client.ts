@@ -26,6 +26,7 @@ export type FoyerContext = {
 	graceMs: number
 	audioConstraints: MediaTrackConstraints | undefined
 	hostMigration: boolean
+	reconnectAttempts: number
 }
 
 export class Foyer {
@@ -39,6 +40,7 @@ export class Foyer {
 	private readonly graceMs: number
 	private readonly audio: MediaTrackConstraints | undefined
 	private readonly migrate: boolean
+	private readonly retries: number
 	private current: Player | null = null
 
 	constructor(options: FoyerOptions) {
@@ -59,6 +61,7 @@ export class Foyer {
 		this.graceMs = options.peerGraceMs ?? 0
 		this.audio = options.audioConstraints
 		this.migrate = options.hostMigration ?? false
+		this.retries = options.reconnectAttempts ?? 3
 	}
 
 	/** The signed-in player, or null. */
@@ -75,6 +78,7 @@ export class Foyer {
 		graceMs: this.graceMs,
 		audioConstraints: this.audio,
 		hostMigration: this.migrate,
+		reconnectAttempts: this.retries,
 		requirePlayer: () => {
 			if (!this.current) throw new Error('foyer: not signed in')
 			return this.current

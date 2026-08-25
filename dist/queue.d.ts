@@ -8,6 +8,15 @@ export type QueueOptions = {
     channel?: RTCDataChannelInit;
     /** Give up after this long with nobody to pair with. */
     timeoutMs?: number;
+    /**
+     * Stop waiting.
+     *
+     * Without this the only way out of a search is to wait out the timeout,
+     * which is a poor answer when someone has simply changed their mind and
+     * clicked away. Aborting also withdraws the advertisement, so nobody is
+     * paired with a browser that has stopped listening.
+     */
+    signal?: AbortSignal;
     iceServers?: RTCIceServer[];
     /** Table prefix, matching the schema. */
     prefix?: string;

@@ -41,6 +41,7 @@ export declare class PeerNet {
     private channels;
     private pendingIce;
     private listeners;
+    private attempts;
     constructor(ctx: FoyerContext, roomId: string, hostId: string, opts: PeerOptions);
     get peers(): string[];
     on: <K extends keyof Events>(event: K, listener: Listener<K>) => Unsubscribe;
@@ -51,6 +52,17 @@ export declare class PeerNet {
     close: () => void;
     private send;
     private drop;
+    /**
+     * Rebuilds a failed connection, or gives up and drops the peer.
+     *
+     * Only the side that offered retries. If both ends rebuilt at once they
+     * would collide exactly as two simultaneous offers do, so the same rule
+     * that settles who offers settles who reconnects.
+     *
+     * Presence is consulted first: there is no point rebuilding a connection to
+     * a browser that has closed.
+     */
+    private retry;
     private newConnection;
     private adopt;
     private offerTo;

@@ -443,6 +443,7 @@ export const createMediaMesh = (options) => {
         audioConstraints: options.audioConstraints,
         // A standalone mesh has no room to hand anyone.
         hostMigration: false,
+        reconnectAttempts: options.reconnectAttempts ?? 3,
         requirePlayer: () => player,
     };
     return new MediaMesh(ctx, options.roomId);

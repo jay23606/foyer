@@ -143,6 +143,17 @@ export type FoyerOptions = {
 	 * promoted, which every client works out identically.
 	 */
 	hostMigration?: boolean
+	/**
+	 * How many times to rebuild a peer connection that fails.
+	 *
+	 * ICE gives up for reasons that do not last -- a network changing hands, a
+	 * laptop waking. Without this a peer that is plainly still there stays gone
+	 * until someone reloads. Zero keeps the old behaviour.
+	 *
+	 * Only the side that offered retries, so the two ends do not race, and each
+	 * attempt waits longer than the last.
+	 */
+	reconnectAttempts?: number
 }
 
 export type CreateRoomOptions<TMeta> = {

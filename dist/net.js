@@ -22,6 +22,9 @@ export class PeerNet {
     // adding one early throws, so they wait here.
     pendingIce = new Map();
     listeners = new Map();
+    // Attempts so far, per peer. Cleared the moment a connection succeeds, so
+    // a link that fails twice a day is not treated as one that failed twice.
+    attempts = new Map();
     constructor(ctx, roomId, hostId, opts) {
         this.ctx = ctx;
         this.roomId = roomId;
@@ -103,8 +106,48 @@ export class PeerNet {
         const had = this.channels.delete(peerId);
         this.connections.delete(peerId);
         this.pendingIce.delete(peerId);
+        this.attempts.delete(peerId);
         if (had)
             this.emit('leave', peerId);
+    };
+    /**
+     * Rebuilds a failed connection, or gives up and drops the peer.
+     *
+     * Only the side that offered retries. If both ends rebuilt at once they
+     * would collide exactly as two simultaneous offers do, so the same rule
+     * that settles who offers settles who reconnects.
+     *
+     * Presence is consulted first: there is no point rebuilding a connection to
+     * a browser that has closed.
+     */
+    retry = async (peerId) => {
+        const tried = this.attempts.get(peerId) ?? 0;
+        const present = Object.keys(this.channel?.presenceState() ?? {});
+        if (tried >= this.ctx.reconnectAttempts ||
+            !present.includes(peerId) ||
+            !this.isOfferer(peerId)) {
+            this.drop(peerId);
+            return;
+        }
+        this.attempts.set(peerId, tried + 1);
+        // Discard the dead connection without telling the app the peer left --
+        // as far as it is concerned this one never went away.
+        this.channels.get(peerId)?.close();
+        this.connections.get(peerId)?.close();
+        this.channels.delete(peerId);
+        this.connections.delete(peerId);
+        this.pendingIce.delete(peerId);
+        // Each attempt waits longer, so a network that is still settling is not
+        // hammered while it does.
+        await new Promise(resolve => setTimeout(resolve, 500 * 2 ** tried));
+        if (!this.channel)
+            return;
+        try {
+            await this.offerTo(peerId);
+        }
+        catch (err) {
+            this.emit('error', err instanceof Error ? err : new Error(String(err)));
+        }
     };
     newConnection = (peerId) => {
         const pc = new RTCPeerConnection({ iceServers: this.ctx.iceServers });
@@ -120,9 +163,18 @@ export class PeerNet {
             });
         });
         pc.addEventListener('connectionstatechange', () => {
-            if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+            // 'closed' is us; 'failed' is ICE giving up, which it does for
+            // reasons that often do not last.
+            if (pc.connectionState === 'closed') {
                 this.drop(peerId);
+                return;
             }
+            if (pc.connectionState === 'failed') {
+                void this.retry(peerId);
+                return;
+            }
+            if (pc.connectionState === 'connected')
+                this.attempts.delete(peerId);
         });
         pc.addEventListener('datachannel', event => { this.adopt(peerId, event.channel); });
         return pc;
@@ -190,6 +242,17 @@ export class PeerNet {
                 return;
             }
             const description = JSON.parse(signal.data ?? '{}');
+            // A retry arrives as a new offer while we still hold the failed
+            // connection. Reusing it would apply the offer to something already
+            // dead, so the corpse is cleared out first.
+            const existing = this.connections.get(signal.from);
+            if (existing && description.type === 'offer' && existing.connectionState === 'failed') {
+                existing.close();
+                this.channels.get(signal.from)?.close();
+                this.channels.delete(signal.from);
+                this.connections.delete(signal.from);
+                this.pendingIce.delete(signal.from);
+            }
             const pc = this.connections.get(signal.from) ?? this.newConnection(signal.from);
             await pc.setRemoteDescription(description);
             const queued = this.pendingIce.get(signal.from);

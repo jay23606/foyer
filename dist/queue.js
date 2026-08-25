@@ -76,21 +76,41 @@ export const pair = async (supabase, options = {}) => {
         }
     };
     return new Promise((resolve, reject) => {
+        // Withdrawing matters as much as stopping: a waiter still listed is a
+        // partner somebody else is about to be handed.
+        const withdraw = () => {
+            void supabase.from(`${prefix}queue`).delete().eq('client_id', me);
+            cleanup();
+        };
         const timer = setTimeout(() => {
             if (settled)
                 return;
             settled = true;
-            // Stop advertising: a waiter that has given up should not be handed
-            // to the next arrival.
-            void supabase.from(`${prefix}queue`).delete().eq('client_id', me);
-            cleanup();
+            withdraw();
             reject(new Error('foyer: nobody to pair with'));
         }, timeout);
+        const onAbort = () => {
+            if (settled)
+                return;
+            settled = true;
+            clearTimeout(timer);
+            withdraw();
+            pc?.close();
+            reject(new DOMException('foyer: search cancelled', 'AbortError'));
+        };
+        if (options.signal) {
+            if (options.signal.aborted) {
+                onAbort();
+                return;
+            }
+            options.signal.addEventListener('abort', onAbort, { once: true });
+        }
         const succeed = (p) => {
             if (settled)
                 return;
             settled = true;
             clearTimeout(timer);
+            options.signal?.removeEventListener('abort', onAbort);
             resolve(p);
         };
         const newConnection = (other, offering) => {

@@ -28,6 +28,15 @@ export type QueueOptions = {
 	channel?: RTCDataChannelInit
 	/** Give up after this long with nobody to pair with. */
 	timeoutMs?: number
+	/**
+	 * Stop waiting.
+	 *
+	 * Without this the only way out of a search is to wait out the timeout,
+	 * which is a poor answer when someone has simply changed their mind and
+	 * clicked away. Aborting also withdraws the advertisement, so nobody is
+	 * paired with a browser that has stopped listening.
+	 */
+	signal?: AbortSignal
 	iceServers?: RTCIceServer[]
 	/** Table prefix, matching the schema. */
 	prefix?: string
@@ -122,20 +131,38 @@ export const pair = async (
 	}
 
 	return new Promise<QueuePeer>((resolve, reject) => {
+		// Withdrawing matters as much as stopping: a waiter still listed is a
+		// partner somebody else is about to be handed.
+		const withdraw = (): void => {
+			void supabase.from(`${prefix}queue`).delete().eq('client_id', me)
+			cleanup()
+		}
+
 		const timer = setTimeout(() => {
 			if (settled) return
 			settled = true
-			// Stop advertising: a waiter that has given up should not be handed
-			// to the next arrival.
-			void supabase.from(`${prefix}queue`).delete().eq('client_id', me)
-			cleanup()
+			withdraw()
 			reject(new Error('foyer: nobody to pair with'))
 		}, timeout)
+
+		const onAbort = (): void => {
+			if (settled) return
+			settled = true
+			clearTimeout(timer)
+			withdraw()
+			pc?.close()
+			reject(new DOMException('foyer: search cancelled', 'AbortError'))
+		}
+		if (options.signal) {
+			if (options.signal.aborted) { onAbort(); return }
+			options.signal.addEventListener('abort', onAbort, { once: true })
+		}
 
 		const succeed = (p: QueuePeer): void => {
 			if (settled) return
 			settled = true
 			clearTimeout(timer)
+			options.signal?.removeEventListener('abort', onAbort)
 			resolve(p)
 		}
 

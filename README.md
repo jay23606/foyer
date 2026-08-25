@@ -1,7 +1,7 @@
 # foyer
 
 **Peer-to-peer rooms for Supabase.** Lobbies, presence, chat, moderation and
-voice, with no server to deploy.
+voice and video, with no server to deploy.
 
 A foyer is the room people meet in before anything happens. That is what this
 is: the layer between "two browsers exist" and "a multiplayer app".
@@ -71,6 +71,34 @@ asking at the same moment must not both be handed the same partner, and
 `for update skip locked` is what makes that impossible rather than merely
 unlikely.
 
+## Voice and video
+
+The media mesh takes constraints, or a stream you already hold — a camera
+preview, a shared screen — so it does not open a second capture.
+
+```js
+const media = room.media()
+await media.start({ audio: true, video: true })   // from a click
+
+media.onStream((peerId, stream) => addTile(peerId, stream))
+media.onLeave(peerId => removeTile(peerId))
+
+media.toggleMuted()
+media.toggleCamera()
+```
+
+An **audio-only** mesh plays itself through a hidden element: someone who
+asked for voice should not have to render anything. A mesh carrying **video**
+does not, because only the app knows where a picture goes — so remote media
+arrives through `onStream` and you place it.
+
+Muting and camera toggles flip `track.enabled` rather than adding or removing
+tracks, because changing tracks on a live connection triggers renegotiation:
+a fresh offer and answer in the middle of a call.
+
+`room.voice()` and `room.media()` are the same mesh. The voice spelling stays
+because callers depend on it.
+
 ## Topology is a decision, so foyer makes you state it
 
 ```ts
@@ -113,6 +141,10 @@ production.
 
 Verified in use: sign-in, a live room list across sessions, joining, rosters,
 chat, host-only settings, synchronised launch, and the voice mesh.
+
+p2p-chat runs on the rooms and the data-channel mesh; the random-pairing queue
+is verified end to end between two browsers. Video is implemented and typed but
+has not yet been exercised in a real call.
 
 `PeerNet` -- the data-channel layer with the star/mesh choice -- is the one
 part with no consumer yet. netquake keeps its own broker there, because its

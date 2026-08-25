@@ -110,8 +110,9 @@ Muting and camera toggles flip `track.enabled` rather than adding or removing
 tracks, because changing tracks on a live connection triggers renegotiation:
 a fresh offer and answer in the middle of a call.
 
-One mesh, one name. It began audio-only and was called `VoiceMesh`; it carries
-video now, so it is `MediaMesh`, reached through `room.media()`.
+It began audio-only as `VoiceMesh` and carries video now, so the class is
+`MediaMesh`. `room.media()` and `room.voice()` both return it — the second
+reads better when an app only ever wants a microphone.
 
 ## Topology is a decision, so foyer makes you state it
 
@@ -184,6 +185,112 @@ because a wrong guess there produces a system that connects perfectly and is
 quietly useless. And **voice is always a mesh**, because a star means everyone
 hears the host and nobody hears each other — offering the choice would only
 let someone pick the broken one.
+
+## Reference
+
+### `createFoyer(options)`
+
+| | |
+|---|---|
+| `signIn(name)` | anonymous sign-in, ensures a profile. Renames if already signed in. |
+| `signOut()` | forget the player; the profile row and its history stay |
+| `hasSession()` | already signed in, so sign-in can be skipped |
+| `player` | the signed-in `Player`, or `null` |
+| `listRooms()` | open rooms, newest first |
+| `onRooms(cb)` | live room list; fires on any change → `Unsubscribe` |
+| `createRoom({ name, metadata, maxPlayers, status })` | → `RoomHandle` |
+| `join(idOrCode)` | by room id or short code → `RoomHandle` |
+| `queue({ tag, media, timeoutMs, signal })` | random pairing → `QueuePeer` |
+
+### `RoomHandle`
+
+Read: `id`, `code`, `name`, `status`, `metadata`, `hostId`, `maxPlayers`,
+`isOpen`, `createdAt`, `players`, `isHost`.
+
+| | |
+|---|---|
+| `update({ metadata, status, name, isOpen })` | host only, enforced by RLS |
+| `setPlayerState(state)` | your own blob: colour, team, progress |
+| `say(body, system?)` | post a message |
+| `history(limit?)` | past messages |
+| `kick(id)` / `ban(id)` / `unban(id)` | host only; a ban blocks the rejoin |
+| `leave()` | also runs on tab close |
+| `connect({ topology })` | → `PeerNet` |
+| `media()` / `voice()` | → `MediaMesh` |
+
+Events via `room.on(name, cb)`, each returning `Unsubscribe`:
+
+| event | payload |
+|---|---|
+| `players` | `RoomPlayer[]` — anyone joins, leaves or changes state |
+| `message` | `Message` — chat and system notices alike |
+| `metadata` | your blob, after a host edits it |
+| `status` | the room's phase string |
+| `host` | new host id, after migration |
+| `closed` | the room was closed |
+
+### `PeerNet` — data channels
+
+`net.peers` lists connected ids; `net.close()` tears down.
+
+| event | payload |
+|---|---|
+| `peer` | `Peer` — `{ id, send, close, open }`, once its channel opens |
+| `data` | `{ from, data }` |
+| `leave` | peer id |
+| `error` | `Error` |
+
+### `MediaMesh` — voice and video
+
+| | |
+|---|---|
+| `start(constraints | stream)` | from a click → `MediaStatus` |
+| `stop()` | close every connection and release the capture |
+| `setMuted(bool)` / `toggleMuted()` | flips the audio track |
+| `setCameraOff(bool)` / `toggleCamera()` | flips the video track |
+| `setVideoSending(bool)` | stop sending video entirely, without renegotiating |
+| `onStatus(cb)` | `off` / `starting` / `live` / `denied` / `unavailable` |
+| `onStream(cb)` | `(peerId, stream)` — attach it to a `<video>` yourself |
+| `onLeave(cb)` | `(peerId)` — remove their tile |
+| `muted`, `cameraOff`, `sendingVideo`, `peerCount`, `currentStatus` | state |
+
+### `QueuePeer` — a random pairing
+
+`id`, `open`, `send(data)`, `close()`, and `on(event, cb)` for `data`,
+`stream` and `close`.
+
+## A complete example
+
+```html
+<input id="msg"><div id="log"></div>
+<script type="module">
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { createFoyer } from 'https://esm.sh/@jay23606/foyer@1'
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+const foyer = createFoyer({ supabase })
+
+await foyer.signIn('ranger')
+
+// ?room=ABC12 joins that room; without it, make one and share the code.
+const code = new URLSearchParams(location.search).get('room')
+const room = code ? await foyer.join(code) : await foyer.createRoom()
+if (!code) console.log('share this code:', room.code)
+
+const peers = new Map()
+const net = await room.connect({ topology: 'mesh' })
+net.on('peer', p => peers.set(p.id, p))
+net.on('leave', id => peers.delete(id))
+net.on('data', ({ data }) => { log.textContent += data + '
+' })
+
+msg.onkeypress = e => {
+  if (e.key !== 'Enter' || !msg.value) return
+  peers.forEach(p => p.send(msg.value))
+  msg.value = ''
+}
+</script>
+```
 
 ## Status
 

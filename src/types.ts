@@ -106,6 +106,34 @@ export type FoyerOptions = {
 	 * of thumbnails that need not -- replaces the whole curve.
 	 */
 	videoQuality?: (peers: number) => VideoQuality
+	/**
+	 * Room code length. Five is short enough to read aloud and long enough that
+	 * collisions are not a worry at small scale; a busier deployment may want
+	 * more.
+	 */
+	codeLength?: number
+	/**
+	 * The alphabet codes are drawn from. The default omits O/0 and I/1, which
+	 * are the pairs people mishear and mistype. Replace it to add characters or
+	 * to remove more.
+	 */
+	codeAlphabet?: string
+	/**
+	 * How long to wait before believing a peer has gone.
+	 *
+	 * Presence is the only signal for a browser that vanished without saying
+	 * anything, but it also fires for a connection that merely stumbled. Zero
+	 * drops immediately, which suits a LAN and punishes a phone on a train.
+	 */
+	peerGraceMs?: number
+	/**
+	 * Microphone constraints for the default capture.
+	 *
+	 * Echo cancellation and noise suppression are assumed on, which is right
+	 * for talking and wrong for sending music. Ignored when you pass your own
+	 * constraints or your own stream to start().
+	 */
+	audioConstraints?: MediaTrackConstraints
 }
 
 export type CreateRoomOptions<TMeta> = {

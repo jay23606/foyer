@@ -1,6 +1,6 @@
 # foyer
 
-**Peer-to-peer rooms for Supabase.** Lobbies, presence, chat, moderation and
+**Peer-to-peer rooms for Supabase.** Lobbies, presence, chat, moderation,
 voice and video, with no server to deploy.
 
 A foyer is the room people meet in before anything happens. That is what this
@@ -146,6 +146,31 @@ project. Change it in the schema and pass the same value to `createFoyer`.
 The anon key is public by design — row-level security is what protects the
 data. The service role key must never reach the browser.
 
+## Options
+
+Sensible defaults, adjustable where an app might reasonably differ.
+
+| option | default | why you might change it |
+|---|---|---|
+| `prefix` | `foyer_` | share one project between apps |
+| `iceServers` | a public STUN | your own STUN, or a TURN relay |
+| `videoQuality` | scales with audience | a call that should look good; thumbnails that need not |
+| `codeLength` | `5` | more room in a busy deployment |
+| `codeAlphabet` | no `O`/`0`, no `I`/`1` | add or remove characters |
+| `peerGraceMs` | `0` | tolerate a stumbling connection instead of dropping it |
+| `audioConstraints` | echo cancellation on | sending music rather than speech |
+| `url`, `anonKey` | read off the client | avoid undocumented fields |
+
+Per call rather than per client: `topology` on `connect`, `tag` and
+`timeoutMs` on `queue`, `channel` reliability on `connect`, `maxPlayers` on a
+room.
+
+Two things are deliberately not adjustable. **Topology has no default**,
+because a wrong guess there produces a system that connects perfectly and is
+quietly useless. And **voice is always a mesh**, because a star means everyone
+hears the host and nobody hears each other — offering the choice would only
+let someone pick the broken one.
+
 ## Status
 
 Extracted from [netquake](https://github.com/jay23606/netquake) after building
@@ -153,18 +178,25 @@ the same peer-to-peer plumbing there a fourth time, and netquake is its first
 consumer: its lobby, chat, moderation, identity and voice all run on this in
 production.
 
-Verified in use: sign-in, a live room list across sessions, joining, rosters,
-chat, host-only settings, synchronised launch, and the voice mesh.
+What has actually run, and where:
 
-p2p-chat runs on the rooms and the data-channel mesh; the random-pairing queue
-is verified end to end between two browsers. Video is implemented and typed but
-has not yet been exercised in a real call.
+| | proven by |
+|---|---|
+| rooms, lobby, chat, moderation, identity | netquake, in production |
+| voice mesh | netquake, in production |
+| `PeerNet` (data channels, mesh) | p2p-chat, two browsers on separate origins |
+| queue (random pairing) | the claim function in SQL, plus two browsers |
+| video | two browsers exchanging canvas-generated streams |
+| topology rules, room codes | unit tests |
 
-`PeerNet` -- the data-channel layer with the star/mesh choice -- is the one
-part with no consumer yet. netquake keeps its own broker there, because its
-engine owns peer connections through its own interface and wants only the
-offers and candidates. So that code is written and typed but unproven, and
-should be treated accordingly.
+netquake keeps its own signalling broker rather than using `PeerNet`, because
+its engine owns peer connections through its own interface and wants only the
+offers and candidates.
+
+Two gaps worth knowing. Video has been verified with synthetic streams rather
+than a real camera, so the capture path itself is untested. And the queue sends
+media at whatever the browser chooses -- the quality curve applies to the room
+mesh only, which is an inconsistency rather than a decision.
 
 The topology rules and room-code generation are covered by tests (`npm test`),
 including the two properties a bug would break: that both peers agree a pair

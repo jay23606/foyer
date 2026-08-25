@@ -99,6 +99,8 @@ export type StandaloneVoiceOptions = {
     playerId: string;
     iceServers?: RTCIceServer[];
     videoQuality?: (peers: number) => VideoQuality;
+    peerGraceMs?: number;
+    audioConstraints?: MediaTrackConstraints;
 };
 /**
  * A voice mesh without the rest of foyer.

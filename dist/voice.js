@@ -105,7 +105,8 @@ export class VoiceMesh {
             return this.status;
         }
         const constraints = request ?? {
-            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+            audio: this.ctx.audioConstraints
+                ?? { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
             video: false,
         };
         this.audioOnly = !constraints.video;
@@ -246,8 +247,20 @@ export class VoiceMesh {
             void this.onSignal(payload);
         });
         channel.on('presence', { event: 'leave' }, ({ key }) => {
-            if (key !== this.selfId)
+            if (key === this.selfId)
+                return;
+            // Presence fires for a browser that vanished and for one that merely
+            // stumbled. With a grace period, give the second kind time to come
+            // back before tearing its connection down.
+            if (this.ctx.graceMs <= 0) {
                 this.drop(key);
+                return;
+            }
+            setTimeout(() => {
+                const present = Object.keys(channel.presenceState());
+                if (!present.includes(key))
+                    this.drop(key);
+            }, this.ctx.graceMs);
         });
         this.channel = channel;
         await new Promise((resolve, reject) => {
@@ -426,6 +439,8 @@ export const createVoiceMesh = (options) => {
         iceServers: options.iceServers ?? [{ urls: 'stun:stun.l.google.com:19302' }],
         rest: null,
         videoQuality: options.videoQuality ?? null,
+        graceMs: options.peerGraceMs ?? 0,
+        audioConstraints: options.audioConstraints,
         requirePlayer: () => player,
     };
     return new VoiceMesh(ctx, options.roomId);

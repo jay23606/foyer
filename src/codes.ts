@@ -2,8 +2,9 @@
 // mishear or mistype: no O or 0, no I or 1.
 export const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 
-export const makeCode = (length = 5): string => {
+export const makeCode = (length = 5, alphabet = CODE_ALPHABET): string => {
+	const source = alphabet.length > 0 ? alphabet : CODE_ALPHABET
 	const bytes = new Uint8Array(length)
 	crypto.getRandomValues(bytes)
-	return Array.from(bytes, b => CODE_ALPHABET[b % CODE_ALPHABET.length]).join('')
+	return Array.from(bytes, b => source[b % source.length]).join('')
 }

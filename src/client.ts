@@ -23,6 +23,8 @@ export type FoyerContext = {
 	/** Resolved once: options first, the client's own fields only as a fallback. */
 	rest: { url: string, key: string } | null
 	videoQuality: ((peers: number) => VideoQuality) | null
+	graceMs: number
+	audioConstraints: MediaTrackConstraints | undefined
 }
 
 export class Foyer {
@@ -31,6 +33,10 @@ export class Foyer {
 	private readonly ice: RTCIceServer[]
 	private readonly rest: { url: string, key: string } | null
 	private readonly quality: ((peers: number) => VideoQuality) | null
+	private readonly codeLength: number
+	private readonly codeAlphabet: string | undefined
+	private readonly graceMs: number
+	private readonly audio: MediaTrackConstraints | undefined
 	private current: Player | null = null
 
 	constructor(options: FoyerOptions) {
@@ -46,6 +52,10 @@ export class Foyer {
 		const key = options.anonKey ?? loose.supabaseKey
 		this.rest = url && key ? { url, key } : null
 		this.quality = options.videoQuality ?? null
+		this.codeLength = options.codeLength ?? 5
+		this.codeAlphabet = options.codeAlphabet
+		this.graceMs = options.peerGraceMs ?? 0
+		this.audio = options.audioConstraints
 	}
 
 	/** The signed-in player, or null. */
@@ -59,6 +69,8 @@ export class Foyer {
 		iceServers: this.ice,
 		rest: this.rest,
 		videoQuality: this.quality,
+		graceMs: this.graceMs,
+		audioConstraints: this.audio,
 		requirePlayer: () => {
 			if (!this.current) throw new Error('foyer: not signed in')
 			return this.current
@@ -145,7 +157,7 @@ export class Foyer {
 		const { data, error } = await this.supabase
 			.from(this.table('rooms'))
 			.insert({
-				code: makeCode(),
+				code: makeCode(this.codeLength, this.codeAlphabet),
 				name: options.name ?? '',
 				host_id: player.id,
 				max_players: options.maxPlayers ?? 8,

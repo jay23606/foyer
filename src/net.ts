@@ -109,7 +109,13 @@ export class PeerNet {
 		// Presence is the safety net for peers that vanish without saying so --
 		// a closed tab, a dropped network, a crashed browser.
 		channel.on('presence', { event: 'leave' }, ({ key }: { key: string }) => {
-			if (key !== this.selfId) this.drop(key)
+			if (key === this.selfId) return
+			// A peer that stumbled and came back should not lose its channel.
+			if (this.ctx.graceMs <= 0) { this.drop(key); return }
+			setTimeout(() => {
+				const present = Object.keys(channel.presenceState())
+				if (!present.includes(key)) this.drop(key)
+			}, this.ctx.graceMs)
 		})
 
 		this.channel = channel

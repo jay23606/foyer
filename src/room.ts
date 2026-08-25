@@ -193,11 +193,21 @@ export class RoomHandle<TMeta = Record<string, unknown>> {
 			// the room looking fuller than it is.
 			.on('presence', { event: 'leave' }, ({ key }: { key: string }) => {
 				if (key === self.id) return
-				if (!this.roster.some(p => p.id === key)) return
 				// Only the host writes the correction, or every remaining player
-				// would race to issue the same delete.
-				if (this.isHost) void this.kick(key)
-				else void this.refreshPlayers()
+				// would race to issue the same delete. Removing a seat is destructive
+				// in a way dropping a connection is not -- the player has to rejoin --
+				// so a stumble gets the same grace as elsewhere, re-checked against
+				// presence once it has passed.
+				const settle = (): void => {
+					if (!this.roster.some(p => p.id === key)) return
+					if (this.isHost) void this.kick(key)
+					else void this.refreshPlayers()
+				}
+				if (this.ctx.graceMs <= 0) { settle(); return }
+				setTimeout(() => {
+					const present = Object.keys(this.channel?.presenceState() ?? {})
+					if (!present.includes(key)) settle()
+				}, this.ctx.graceMs)
 			})
 			.subscribe(status => {
 				if (status === 'SUBSCRIBED') void this.channel?.track({ id: self.id })

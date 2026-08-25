@@ -133,7 +133,8 @@ export class VoiceMesh {
 		}
 
 		const constraints: MediaStreamConstraints = request ?? {
-			audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+			audio: this.ctx.audioConstraints
+				?? { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
 			video: false,
 		}
 		this.audioOnly = !constraints.video
@@ -277,7 +278,15 @@ export class VoiceMesh {
 			void this.onSignal(payload as Signal)
 		})
 		channel.on('presence', { event: 'leave' }, ({ key }: { key: string }) => {
-			if (key !== this.selfId) this.drop(key)
+			if (key === this.selfId) return
+			// Presence fires for a browser that vanished and for one that merely
+			// stumbled. With a grace period, give the second kind time to come
+			// back before tearing its connection down.
+			if (this.ctx.graceMs <= 0) { this.drop(key); return }
+			setTimeout(() => {
+				const present = Object.keys(channel.presenceState())
+				if (!present.includes(key)) this.drop(key)
+			}, this.ctx.graceMs)
 		})
 
 		this.channel = channel
@@ -447,6 +456,8 @@ export type StandaloneVoiceOptions = {
 	playerId: string
 	iceServers?: RTCIceServer[]
 	videoQuality?: (peers: number) => VideoQuality
+	peerGraceMs?: number
+	audioConstraints?: MediaTrackConstraints
 }
 
 /**
@@ -466,6 +477,8 @@ export const createVoiceMesh = (options: StandaloneVoiceOptions): VoiceMesh => {
 		iceServers: options.iceServers ?? [{ urls: 'stun:stun.l.google.com:19302' }],
 		rest: null,
 		videoQuality: options.videoQuality ?? null,
+		graceMs: options.peerGraceMs ?? 0,
+		audioConstraints: options.audioConstraints,
 		requirePlayer: () => player,
 	}
 	return new VoiceMesh(ctx, options.roomId)

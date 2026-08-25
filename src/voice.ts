@@ -1,4 +1,4 @@
-import type { RealtimeChannel } from '@supabase/supabase-js'
+import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js'
 import type { FoyerContext } from './client.js'
 import type { Unsubscribe } from './types.js'
 
@@ -281,4 +281,34 @@ export class VoiceMesh {
 		this.pendingIce.delete(peerId)
 		this.dropAudio(peerId)
 	}
+}
+
+export type StandaloneVoiceOptions = {
+	supabase: SupabaseClient
+	/** Any stable string shared by everyone who should hear each other. */
+	roomId: string
+	/** This player's id. Must be unique per participant and stable for the call. */
+	playerId: string
+	iceServers?: RTCIceServer[]
+}
+
+/**
+ * A voice mesh without the rest of foyer.
+ *
+ * Plenty of apps already have their own rooms and identity and want only this
+ * part. Requiring them to adopt foyer's room model to get a microphone would
+ * be a poor trade, so the mesh is constructible on its own: it needs a channel
+ * name and a stable id, and nothing else foyer owns.
+ */
+export const createVoiceMesh = (options: StandaloneVoiceOptions): VoiceMesh => {
+	const player = { id: options.playerId, name: '' }
+	const ctx: FoyerContext = {
+		supabase: options.supabase,
+		// Voice touches no tables; the mesh is entirely broadcast and presence.
+		table: (name: string) => name,
+		iceServers: options.iceServers ?? [{ urls: 'stun:stun.l.google.com:19302' }],
+		rest: null,
+		requirePlayer: () => player,
+	}
+	return new VoiceMesh(ctx, options.roomId)
 }

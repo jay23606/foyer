@@ -1,6 +1,6 @@
 {
   "name": "@jay23606/foyer",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Peer-to-peer rooms for Supabase. Lobbies, presence, chat, moderation and voice, with no server.",
   "type": "module",
   "main": "./dist/index.js",

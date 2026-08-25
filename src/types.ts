@@ -73,6 +73,17 @@ export type FoyerOptions = {
 	prefix?: string
 	/** Defaults to a public STUN server. No TURN: peers behind symmetric NAT will not connect. */
 	iceServers?: RTCIceServer[]
+	/**
+	 * Project URL and anon key.
+	 *
+	 * Only used to release a player's seat from a closing tab, which has to be
+	 * a raw keepalive fetch -- the supabase client cannot finish a normal
+	 * request during unload. Supply them and foyer never touches the client's
+	 * internals; omit them and it falls back to reading undocumented fields,
+	 * which works today and is not promised to keep working.
+	 */
+	url?: string
+	anonKey?: string
 }
 
 export type CreateRoomOptions<TMeta> = {

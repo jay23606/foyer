@@ -27,18 +27,29 @@ export type FoyerContext = {
 	table: (name: string) => string
 	iceServers: RTCIceServer[]
 	requirePlayer: () => Player
+	/** Resolved once: options first, the client's own fields only as a fallback. */
+	rest: { url: string, key: string } | null
 }
 
 export class Foyer {
 	private readonly supabase: SupabaseClient
 	private readonly prefix: string
 	private readonly ice: RTCIceServer[]
+	private readonly rest: { url: string, key: string } | null
 	private current: Player | null = null
 
 	constructor(options: FoyerOptions) {
 		this.supabase = options.supabase
 		this.prefix = options.prefix ?? DEFAULT_PREFIX
 		this.ice = options.iceServers ?? DEFAULT_ICE
+
+		// Reading supabaseUrl/supabaseKey off the client is undocumented. It is
+		// the fallback rather than the plan, and if it ever stops working the
+		// fix is to pass url/anonKey explicitly.
+		const loose = options.supabase as unknown as { supabaseUrl?: string, supabaseKey?: string }
+		const url = options.url ?? loose.supabaseUrl
+		const key = options.anonKey ?? loose.supabaseKey
+		this.rest = url && key ? { url, key } : null
 	}
 
 	/** The signed-in player, or null. */
@@ -50,6 +61,7 @@ export class Foyer {
 		supabase: this.supabase,
 		table: this.table,
 		iceServers: this.ice,
+		rest: this.rest,
 		requirePlayer: () => {
 			if (!this.current) throw new Error('foyer: not signed in')
 			return this.current

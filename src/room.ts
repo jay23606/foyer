@@ -101,18 +101,22 @@ export class RoomHandle<TMeta = Record<string, unknown>> {
 	 */
 	private watchUnload = (): void => {
 		if (typeof window === 'undefined') return
+		const rest = this.ctx.rest
+		if (!rest) return
 		const player = this.ctx.requirePlayer()
 		this.unloadHandler = () => {
-			const url = `${(this.ctx.supabase as any).supabaseUrl}/rest/v1/${this.ctx.table('room_players')}`
-				+ `?room_id=eq.${this.id}&player_id=eq.${player.id}`
-			void fetch(url, {
-				method: 'DELETE',
-				keepalive: true,
-				headers: {
-					apikey: (this.ctx.supabase as any).supabaseKey,
-					Authorization: `Bearer ${(this.ctx.supabase as any).supabaseKey}`,
-				},
-			}).catch(() => { /* the reaper will get it */ })
+			// A normal supabase call cannot finish during unload; keepalive lets
+			// this one outlive the page. Best effort -- presence and the reaper
+			// both cover the case where it does not land.
+			void fetch(
+				`${rest.url}/rest/v1/${this.ctx.table('room_players')}`
+					+ `?room_id=eq.${this.id}&player_id=eq.${player.id}`,
+				{
+					method: 'DELETE',
+					keepalive: true,
+					headers: { apikey: rest.key, Authorization: `Bearer ${rest.key}` },
+				}
+			).catch(() => { /* the reaper will get it */ })
 		}
 		window.addEventListener('beforeunload', this.unloadHandler)
 	}
@@ -153,8 +157,9 @@ export class RoomHandle<TMeta = Record<string, unknown>> {
 	}
 
 	private subscribe = (): void => {
+		const self = this.ctx.requirePlayer()
 		this.channel = this.ctx.supabase
-			.channel(`foyer:room:${this.id}`)
+			.channel(`foyer:room:${this.id}`, { config: { presence: { key: self.id } } })
 			.on('postgres_changes',
 				{ event: '*', schema: 'public', table: this.ctx.table('room_players'), filter: `room_id=eq.${this.id}` },
 				() => { void this.refreshPlayers() })
@@ -179,7 +184,21 @@ export class RoomHandle<TMeta = Record<string, unknown>> {
 						createdAt: row.created_at,
 					})
 				})
-			.subscribe()
+			// A crashed tab, a dropped network or a closed laptop sends no
+			// goodbye, and its unload fetch never ran. Presence notices within
+			// seconds; the row would otherwise sit there until the reaper, with
+			// the room looking fuller than it is.
+			.on('presence', { event: 'leave' }, ({ key }: { key: string }) => {
+				if (key === self.id) return
+				if (!this.roster.some(p => p.id === key)) return
+				// Only the host writes the correction, or every remaining player
+				// would race to issue the same delete.
+				if (this.isHost) void this.kick(key)
+				else void this.refreshPlayers()
+			})
+			.subscribe(status => {
+				if (status === 'SUBSCRIBED') void this.channel?.track({ id: self.id })
+			})
 	}
 
 	// --------------------------------------------------------------- writing
